@@ -13,6 +13,7 @@ const SKINS := [
 		"accent": Color("#ffd86b"),
 		"metallic": 0.9,
 		"roughness": 0.16,
+		"effect": "lion",
 	},
 	{
 		"name": "Inferno Core",
@@ -26,6 +27,7 @@ const SKINS := [
 		"accent": Color("#ff5c25"),
 		"metallic": 0.45,
 		"roughness": 0.28,
+		"effect": "snake",
 	},
 	{
 		"name": "Frost Crystal",
@@ -39,6 +41,7 @@ const SKINS := [
 		"accent": Color("#8deaff"),
 		"metallic": 0.15,
 		"roughness": 0.05,
+		"effect": "eagle",
 	},
 	{
 		"name": "Galaxy Void",
@@ -52,6 +55,7 @@ const SKINS := [
 		"accent": Color("#a77dff"),
 		"metallic": 0.62,
 		"roughness": 0.17,
+		"effect": "eagle",
 	},
 	{
 		"name": "Emerald Royal",
@@ -65,6 +69,7 @@ const SKINS := [
 		"accent": Color("#39ff9e"),
 		"metallic": 0.62,
 		"roughness": 0.14,
+		"effect": "snake",
 	},
 ]
 
@@ -109,6 +114,7 @@ var camera: Camera3D
 var dice_root: Node3D
 var dice_body: MeshInstance3D
 var pip_root: Node3D
+var cinematic_root: Node3D
 var ring: MeshInstance3D
 var accent_light: OmniLight3D
 var under_light: OmniLight3D
@@ -298,6 +304,10 @@ func _build_world() -> void:
 	pip_root = Node3D.new()
 	pip_root.name = "Pips"
 	dice_root.add_child(pip_root)
+
+	cinematic_root = Node3D.new()
+	cinematic_root.name = "DiceCinematics"
+	add_child(cinematic_root)
 
 
 func _build_ui() -> void:
@@ -1437,6 +1447,7 @@ func _update_roll(delta: float) -> void:
 		if roll_button and current_screen != "play":
 			roll_button.disabled = false
 		_spawn_sparks(54, 1.2 if roll_result == 6 else 0.74)
+		_trigger_dice_cinematic(roll_result)
 		_handle_roll_result()
 
 
@@ -1648,6 +1659,177 @@ func _make_particle_material(color: Color) -> StandardMaterial3D:
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	return material
+
+
+func _trigger_dice_cinematic(result: int) -> void:
+	if not cinematic_root:
+		return
+	for child in cinematic_root.get_children():
+		child.queue_free()
+	if result != 6:
+		_spawn_shock_ring(SKINS[selected_skin]["accent"], 0.9)
+		return
+
+	var skin: Dictionary = SKINS[selected_skin]
+	match String(skin.get("effect", "lion")):
+		"snake":
+			_spawn_snake_cinematic(skin["accent"])
+		"eagle":
+			_spawn_eagle_cinematic(skin["accent"])
+		_:
+			_spawn_lion_cinematic(skin["accent"])
+
+
+func _spawn_snake_cinematic(color: Color) -> void:
+	var group := Node3D.new()
+	group.position = dice_root.position + Vector3(0.0, 0.45, 0.0)
+	cinematic_root.add_child(group)
+
+	var snake_material := _make_material(Color("#124e24"), color, 0.25, 0.22, 1.3)
+	var belly_material := _make_material(Color("#ffe58c"), Color("#ffcf57"), 0.1, 0.34, 0.6)
+	for i in range(12):
+		var body := MeshInstance3D.new()
+		var mesh := SphereMesh.new()
+		mesh.radius = 0.11 - float(i) * 0.003
+		mesh.height = mesh.radius * 1.45
+		mesh.radial_segments = 16
+		mesh.rings = 8
+		body.mesh = mesh
+		body.material_override = snake_material
+		var angle := float(i) * 0.52
+		body.position = Vector3(cos(angle) * (0.75 - i * 0.018), sin(float(i) * 0.7) * 0.18, sin(angle) * (0.75 - i * 0.018))
+		group.add_child(body)
+	var head := MeshInstance3D.new()
+	var head_mesh := SphereMesh.new()
+	head_mesh.radius = 0.18
+	head_mesh.height = 0.25
+	head.mesh = head_mesh
+	head.material_override = snake_material
+	head.position = Vector3(0.65, 0.16, 0.25)
+	group.add_child(head)
+	var tongue := MeshInstance3D.new()
+	var tongue_mesh := BoxMesh.new()
+	tongue_mesh.size = Vector3(0.05, 0.012, 0.28)
+	tongue.mesh = tongue_mesh
+	tongue.material_override = _make_material(Color("#ff2244"), Color("#ff6680"), 0.0, 0.2, 1.2)
+	tongue.position = Vector3(0.82, 0.14, 0.34)
+	tongue.rotation_degrees.y = -28
+	group.add_child(tongue)
+	_spawn_shock_ring(color, 1.4)
+
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(group, "rotation:y", TAU * 1.6, 1.15).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(group, "scale", Vector3.ONE * 1.22, 0.55).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.chain().tween_callback(group.queue_free)
+
+
+func _spawn_lion_cinematic(color: Color) -> void:
+	var group := Node3D.new()
+	group.position = dice_root.position + Vector3(0.0, 0.5, 0.0)
+	cinematic_root.add_child(group)
+
+	var mane_material := _make_material(Color("#d78a1d"), Color("#ffd45c"), 0.25, 0.26, 1.2)
+	var face_material := _make_material(Color("#f2c064"), Color("#ffdd80"), 0.1, 0.32, 0.7)
+	var mane := MeshInstance3D.new()
+	var mane_mesh := TorusMesh.new()
+	mane_mesh.inner_radius = 0.34
+	mane_mesh.outer_radius = 0.58
+	mane_mesh.ring_segments = 36
+	mane_mesh.rings = 12
+	mane.mesh = mane_mesh
+	mane.material_override = mane_material
+	mane.rotation_degrees.x = 90
+	group.add_child(mane)
+	var face := MeshInstance3D.new()
+	var face_mesh := SphereMesh.new()
+	face_mesh.radius = 0.34
+	face_mesh.height = 0.46
+	face_mesh.radial_segments = 24
+	face_mesh.rings = 12
+	face.mesh = face_mesh
+	face.material_override = face_material
+	group.add_child(face)
+	for side in [-1, 1]:
+		var ear := MeshInstance3D.new()
+		var ear_mesh := CylinderMesh.new()
+		ear_mesh.top_radius = 0.0
+		ear_mesh.bottom_radius = 0.11
+		ear_mesh.height = 0.22
+		ear.mesh = ear_mesh
+		ear.material_override = mane_material
+		ear.position = Vector3(side * 0.24, 0.26, 0.0)
+		ear.rotation_degrees.z = side * -26
+		group.add_child(ear)
+	_spawn_shock_ring(color, 1.8)
+
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(group, "scale", Vector3.ONE * 1.55, 0.42).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_property(group, "rotation:y", TAU * 0.35, 0.85)
+	tween.tween_property(group, "position:y", group.position.y + 0.35, 0.42).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
+	tween.chain().tween_callback(group.queue_free)
+
+
+func _spawn_eagle_cinematic(color: Color) -> void:
+	var group := Node3D.new()
+	group.position = dice_root.position + Vector3(0.0, 0.75, 0.0)
+	cinematic_root.add_child(group)
+
+	var wing_material := _make_material(Color("#f3f5ff"), color, 0.18, 0.2, 1.4)
+	var body_material := _make_material(Color("#334055"), Color("#8fb7ff"), 0.25, 0.28, 0.6)
+	var body := MeshInstance3D.new()
+	var body_mesh := SphereMesh.new()
+	body_mesh.radius = 0.18
+	body_mesh.height = 0.34
+	body.mesh = body_mesh
+	body.material_override = body_material
+	group.add_child(body)
+	for side in [-1, 1]:
+		var wing := MeshInstance3D.new()
+		var wing_mesh := BoxMesh.new()
+		wing_mesh.size = Vector3(0.74, 0.035, 0.24)
+		wing.mesh = wing_mesh
+		wing.material_override = wing_material
+		wing.position = Vector3(side * 0.42, 0.0, 0.0)
+		wing.rotation_degrees.z = side * 18
+		group.add_child(wing)
+	var beak := MeshInstance3D.new()
+	var beak_mesh := CylinderMesh.new()
+	beak_mesh.top_radius = 0.0
+	beak_mesh.bottom_radius = 0.08
+	beak_mesh.height = 0.2
+	beak.mesh = beak_mesh
+	beak.material_override = _make_material(Color("#ffcf35"), Color("#ffe88a"), 0.1, 0.22, 0.8)
+	beak.position = Vector3(0.0, 0.0, 0.22)
+	beak.rotation_degrees.x = 90
+	group.add_child(beak)
+	_spawn_shock_ring(color, 1.5)
+
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(group, "position:z", group.position.z - 1.15, 0.85).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.tween_property(group, "position:y", group.position.y + 0.38, 0.5).set_trans(Tween.TRANS_SINE)
+	tween.tween_property(group, "scale", Vector3.ONE * 1.35, 0.38).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.chain().tween_callback(group.queue_free)
+
+
+func _spawn_shock_ring(color: Color, scale_target: float) -> void:
+	var ring_fx := MeshInstance3D.new()
+	var mesh := TorusMesh.new()
+	mesh.inner_radius = 0.35
+	mesh.outer_radius = 0.39
+	mesh.ring_segments = 80
+	mesh.rings = 8
+	ring_fx.mesh = mesh
+	ring_fx.material_override = _make_particle_material(color)
+	ring_fx.position = dice_root.position + Vector3(0.0, 0.12, 0.0)
+	ring_fx.rotation_degrees.x = 90
+	cinematic_root.add_child(ring_fx)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(ring_fx, "scale", Vector3.ONE * scale_target, 0.55).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	tween.chain().tween_callback(ring_fx.queue_free)
 
 
 func _smoothstep(value: float) -> float:
