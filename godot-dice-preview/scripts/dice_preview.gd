@@ -28,7 +28,7 @@ const SKINS := [
 		"accent": Color("#ff5c25"),
 		"metallic": 0.45,
 		"roughness": 0.28,
-		"effect": "snake",
+		"effect": "explosion",
 		"model": "res://assets/dice_models/Dice_Snake.gltf",
 	},
 	{
@@ -43,7 +43,7 @@ const SKINS := [
 		"accent": Color("#8deaff"),
 		"metallic": 0.15,
 		"roughness": 0.05,
-		"effect": "eagle",
+		"effect": "crack",
 		"model": "res://assets/dice_models/Dice_Lion.gltf",
 	},
 	{
@@ -58,7 +58,7 @@ const SKINS := [
 		"accent": Color("#a77dff"),
 		"metallic": 0.62,
 		"roughness": 0.17,
-		"effect": "eagle",
+		"effect": "car",
 		"model": "res://assets/dice_models/Dice_Eagle.gltf",
 	},
 	{
@@ -73,7 +73,7 @@ const SKINS := [
 		"accent": Color("#39ff9e"),
 		"metallic": 0.62,
 		"roughness": 0.14,
-		"effect": "snake",
+		"effect": "car",
 		"model": "res://assets/dice_models/Dice_Snake.gltf",
 	},
 ]
@@ -122,6 +122,7 @@ var pip_root: Node3D
 var cinematic_root: Node3D
 var play_dice_container: SubViewportContainer
 var play_dice_viewport: SubViewport
+var play_dice_body: RigidBody3D
 var play_dice_root: Node3D
 var play_dice_pip_root: Node3D
 var ring: MeshInstance3D
@@ -185,15 +186,12 @@ func _process(delta: float) -> void:
 	else:
 		dice_root.position.y = _dice_base_y() + sin(time * 1.35) * 0.045
 		dice_root.rotate_y(delta * 0.22)
-		if play_dice_root:
-			play_dice_root.rotation.y += delta * 0.9
-			play_dice_root.position.y = sin(time * 1.7) * 0.05
+		if play_dice_body and not rolling:
+			play_dice_body.rotation.y += delta * 0.55
+			play_dice_body.position.y = sin(time * 1.7) * 0.035
 
 	_update_sparks(delta)
 	_update_turn_timer()
-	if play_dice_root and rolling and current_screen == "play":
-		play_dice_root.rotation += Vector3(delta * 8.0, delta * 11.0, delta * 6.5)
-		play_dice_root.position.y = abs(sin(time * 10.0)) * 0.28
 	if roll_button:
 		roll_button.pivot_offset = roll_button.size / 2.0
 		if rolling and current_screen == "play":
@@ -658,9 +656,37 @@ func _build_play_dice_viewport(screen: Control) -> void:
 	glow.light_energy = 2.2
 	root.add_child(glow)
 
+	var floor_body := StaticBody3D.new()
+	floor_body.position = Vector3(0, -0.92, 0)
+	root.add_child(floor_body)
+	var floor_shape := CollisionShape3D.new()
+	var floor_box := BoxShape3D.new()
+	floor_box.size = Vector3(4.0, 0.08, 4.0)
+	floor_shape.shape = floor_box
+	floor_body.add_child(floor_shape)
+
+	play_dice_body = RigidBody3D.new()
+	play_dice_body.name = "GameplayDiceRigidBody"
+	play_dice_body.mass = 0.18
+	play_dice_body.gravity_scale = 1.0
+	play_dice_body.linear_damp = 2.0
+	play_dice_body.angular_damp = 2.4
+	play_dice_body.freeze = true
+	var physics_material := PhysicsMaterial.new()
+	physics_material.bounce = 0.2
+	physics_material.friction = 0.8
+	play_dice_body.physics_material_override = physics_material
+	root.add_child(play_dice_body)
+
+	var dice_shape := CollisionShape3D.new()
+	var dice_box := BoxShape3D.new()
+	dice_box.size = Vector3(1.45, 1.45, 1.45)
+	dice_shape.shape = dice_box
+	play_dice_body.add_child(dice_shape)
+
 	play_dice_root = Node3D.new()
 	play_dice_root.name = "GameplayDiceModel"
-	root.add_child(play_dice_root)
+	play_dice_body.add_child(play_dice_root)
 	_rebuild_play_dice_model()
 
 
@@ -1612,6 +1638,7 @@ func _roll_dice() -> void:
 	roll_spin = Vector3(randf_range(15, 22), randf_range(18, 27), randf_range(13, 21)) * PI
 	blend_started = false
 	target_rotation = result_rotations[roll_result]
+	_start_play_dice_physics_roll()
 	if result_label:
 		result_label.text = "يدور..."
 	if roll_button:
@@ -1619,6 +1646,41 @@ func _roll_dice() -> void:
 		_make_button_transparent(roll_button)
 		roll_button.disabled = true
 	_spawn_sparks(42, 0.82)
+
+
+func _start_play_dice_physics_roll() -> void:
+	if current_screen != "play" or not play_dice_body:
+		return
+	play_dice_body.freeze = true
+	play_dice_body.position = Vector3(0, 0.42, 0)
+	play_dice_body.rotation = Vector3(randf() * PI, randf() * PI, randf() * PI)
+	play_dice_body.linear_velocity = Vector3.ZERO
+	play_dice_body.angular_velocity = Vector3.ZERO
+	play_dice_body.freeze = false
+	var impulse := Vector3(randf_range(-0.42, 0.42), randf_range(1.15, 1.55), randf_range(-0.35, 0.35))
+	var contact_offset := Vector3(randf_range(-0.32, 0.32), randf_range(-0.18, 0.2), randf_range(-0.32, 0.32))
+	var torque := Vector3(randf_range(1.8, 3.2), randf_range(2.8, 4.6), randf_range(1.8, 3.2))
+	play_dice_body.apply_impulse(impulse, contact_offset)
+	play_dice_body.apply_torque_impulse(torque)
+
+
+func _detect_top_face_from_basis(basis: Basis) -> int:
+	var candidates := {
+		1: basis.z,
+		6: -basis.z,
+		2: basis.y,
+		5: -basis.y,
+		3: basis.x,
+		4: -basis.x,
+	}
+	var best_face := 1
+	var best_dot := -999.0
+	for face in candidates.keys():
+		var dot: float = candidates[face].dot(Vector3.UP)
+		if dot > best_dot:
+			best_dot = dot
+			best_face = face
+	return best_face
 
 
 func _update_roll(delta: float) -> void:
@@ -1648,9 +1710,12 @@ func _update_roll(delta: float) -> void:
 		if roll_button:
 			roll_button.text = ""
 			_make_button_transparent(roll_button)
-		if play_dice_root:
-			play_dice_root.quaternion = result_rotations[roll_result]
-			play_dice_root.position.y = 0.0
+		if play_dice_body:
+			play_dice_body.freeze = true
+			play_dice_body.linear_velocity = Vector3.ZERO
+			play_dice_body.angular_velocity = Vector3.ZERO
+			play_dice_body.quaternion = result_rotations[roll_result]
+			play_dice_body.position = Vector3.ZERO
 		if roll_button and current_screen != "play":
 			roll_button.disabled = false
 		_spawn_sparks(54, 1.2 if roll_result == 6 else 0.74)
@@ -1926,10 +1991,12 @@ func _trigger_play_dice_cinematic(result: int) -> void:
 		return
 	var skin: Dictionary = SKINS[selected_skin]
 	match String(skin.get("effect", "lion")):
-		"snake":
-			_spawn_play_snake_fx(skin["accent"])
-		"eagle":
-			_spawn_play_eagle_fx(skin["accent"])
+		"car":
+			_spawn_play_car_fx(skin["accent"])
+		"explosion":
+			_spawn_play_explosion_fx(skin["accent"])
+		"crack":
+			_spawn_play_crack_fx(skin["accent"])
 		_:
 			_spawn_play_lion_fx(skin["accent"])
 
@@ -2001,6 +2068,82 @@ func _spawn_play_eagle_fx(color: Color) -> void:
 	tween.set_parallel(true)
 	tween.tween_property(group, "position:y", 0.55, 0.45).set_trans(Tween.TRANS_SINE)
 	tween.tween_property(group, "scale", Vector3.ONE * 1.4, 0.45).set_trans(Tween.TRANS_BACK)
+	tween.chain().tween_callback(group.queue_free)
+
+
+func _spawn_play_car_fx(color: Color) -> void:
+	var group := Node3D.new()
+	group.name = "PlayFX_Car"
+	play_dice_root.add_child(group)
+	var body_mat := _make_material(Color("#1b7cff"), color, 0.45, 0.18, 1.1)
+	var wheel_mat := _make_material(Color("#101014"), Color("#333333"), 0.2, 0.35, 0.2)
+	var car_body := MeshInstance3D.new()
+	var body_mesh := BoxMesh.new()
+	body_mesh.size = Vector3(0.95, 0.28, 0.42)
+	car_body.mesh = body_mesh
+	car_body.material_override = body_mat
+	car_body.position = Vector3(-1.1, 0.35, 0.0)
+	group.add_child(car_body)
+	for x in [-1.42, -0.82]:
+		for z in [-0.24, 0.24]:
+			var wheel := MeshInstance3D.new()
+			var mesh := CylinderMesh.new()
+			mesh.top_radius = 0.09
+			mesh.bottom_radius = 0.09
+			mesh.height = 0.07
+			mesh.radial_segments = 16
+			wheel.mesh = mesh
+			wheel.material_override = wheel_mat
+			wheel.position = Vector3(x, 0.18, z)
+			wheel.rotation_degrees.x = 90
+			group.add_child(wheel)
+	_spawn_play_shock_ring(color, 1.25)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(group, "position:x", 2.3, 0.78).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_OUT)
+	tween.tween_property(group, "scale", Vector3.ONE * 1.3, 0.35).set_trans(Tween.TRANS_BACK)
+	tween.chain().tween_callback(group.queue_free)
+
+
+func _spawn_play_explosion_fx(color: Color) -> void:
+	var group := Node3D.new()
+	group.name = "PlayFX_Explosion"
+	play_dice_root.add_child(group)
+	for i in range(18):
+		var shard := MeshInstance3D.new()
+		var mesh := BoxMesh.new()
+		mesh.size = Vector3(randf_range(0.04, 0.12), randf_range(0.04, 0.16), randf_range(0.04, 0.12))
+		shard.mesh = mesh
+		shard.material_override = _make_material(Color("#ffcc33"), color, 0.2, 0.22, 1.5)
+		shard.position = Vector3.ZERO
+		shard.rotation = Vector3(randf() * PI, randf() * PI, randf() * PI)
+		group.add_child(shard)
+		var direction := Vector3(randf_range(-1.0, 1.0), randf_range(0.1, 1.0), randf_range(-1.0, 1.0)).normalized()
+		create_tween().tween_property(shard, "position", direction * randf_range(0.7, 1.35), 0.42).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_spawn_play_shock_ring(color, 1.7)
+	var tween := create_tween()
+	tween.tween_interval(0.75)
+	tween.tween_callback(group.queue_free)
+
+
+func _spawn_play_crack_fx(color: Color) -> void:
+	var group := Node3D.new()
+	group.name = "PlayFX_Crack"
+	play_dice_root.add_child(group)
+	var crack_mat := _make_material(Color("#111111"), color, 0.1, 0.28, 1.2)
+	for i in range(5):
+		var crack := MeshInstance3D.new()
+		var mesh := BoxMesh.new()
+		mesh.size = Vector3(0.055, 0.02, randf_range(0.55, 1.0))
+		crack.mesh = mesh
+		crack.material_override = crack_mat
+		crack.position = Vector3(randf_range(-0.45, 0.45), randf_range(-0.15, 0.45), 0.82)
+		crack.rotation_degrees = Vector3(0, 0, randf_range(-55, 55))
+		group.add_child(crack)
+	_spawn_play_shock_ring(color, 1.25)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(group, "scale", Vector3.ONE * 1.2, 0.28).set_trans(Tween.TRANS_BACK)
 	tween.chain().tween_callback(group.queue_free)
 
 
