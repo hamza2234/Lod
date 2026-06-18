@@ -162,7 +162,7 @@ func _process(delta: float) -> void:
 	if rolling:
 		_update_roll(delta)
 	else:
-		dice_root.position.y = 0.32 + sin(time * 1.35) * 0.045
+		dice_root.position.y = _dice_base_y() + sin(time * 1.35) * 0.045
 		dice_root.rotate_y(delta * 0.22)
 
 	_update_sparks(delta)
@@ -476,6 +476,11 @@ func _build_play_screen() -> Control:
 	status_label.size = Vector2(580, 64)
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	screen.add_child(status_label)
+
+	var dice_hint := _label("النرد المجسم هنا ↙", 16, Color("#fff0a8"), HORIZONTAL_ALIGNMENT_LEFT)
+	dice_hint.position = Vector2(36, 906)
+	dice_hint.size = Vector2(180, 32)
+	screen.add_child(dice_hint)
 
 	var bottom_bar := _panel(Vector2(360, 88), Vector2(180, 940), Color("#15182c"), 18)
 	screen.add_child(bottom_bar)
@@ -1075,9 +1080,9 @@ func _start_new_match() -> void:
 
 func _apply_screen_camera() -> void:
 	if current_screen == "play":
-		dice_root.position.x = -2.25
-		dice_root.position.z = 0.35
-		dice_root.scale = Vector3.ONE * 0.62
+		dice_root.position.x = -3.55
+		dice_root.position.z = 0.25
+		dice_root.scale = Vector3.ONE * 0.74
 	elif current_screen == "market":
 		dice_root.position.x = 1.45
 		dice_root.position.z = 0.0
@@ -1090,14 +1095,20 @@ func _apply_screen_camera() -> void:
 
 func _update_camera(time: float) -> void:
 	if current_screen == "play":
-		camera.position = Vector3(-2.1 + sin(time * 0.22) * 0.08, 2.25, 5.4)
-		camera.look_at(Vector3(-2.1, 0.0, 0.0), Vector3.UP)
+		camera.position = Vector3(-2.45 + sin(time * 0.22) * 0.08, 2.15, 5.6)
+		camera.look_at(Vector3(-2.45, -0.28, 0.0), Vector3.UP)
 	elif current_screen == "market":
 		camera.position = Vector3(1.3 + sin(time * 0.22) * 0.12, 2.8, 6.2)
 		camera.look_at(Vector3(1.3, 0.05, 0.0), Vector3.UP)
 	else:
 		camera.position = Vector3(sin(time * 0.22) * 0.18, 3.25, 7.4)
 		camera.look_at(Vector3(0, 0.1, 0), Vector3.UP)
+
+
+func _dice_base_y() -> float:
+	if current_screen == "play":
+		return -1.28
+	return 0.32
 
 
 func _change_bet(amount: int) -> void:
@@ -1285,10 +1296,11 @@ func _update_roll(delta: float) -> void:
 	roll_time += delta
 	var t := clampf(roll_time / roll_duration, 0.0, 1.0)
 	var eased := 1.0 - pow(1.0 - t, 3.0)
+	var base_y := _dice_base_y()
 
 	if t < 0.78:
 		dice_root.rotation = roll_seed + roll_spin * eased
-		dice_root.position.y = 0.32 + abs(sin(t * PI * 5.4)) * (1.06 - t * 0.42)
+		dice_root.position.y = base_y + abs(sin(t * PI * 5.4)) * (1.06 - t * 0.42)
 	else:
 		if not blend_started:
 			blend_started = true
@@ -1296,12 +1308,12 @@ func _update_roll(delta: float) -> void:
 			_spawn_sparks(26, 0.36)
 		var u := _smoothstep((t - 0.78) / 0.22)
 		dice_root.quaternion = blend_start.slerp(target_rotation, u)
-		dice_root.position.y = 0.32 + sin((1.0 - u) * PI * 3.0) * 0.09
+		dice_root.position.y = base_y + sin((1.0 - u) * PI * 3.0) * 0.09
 
 	if t >= 1.0:
 		rolling = false
 		dice_root.quaternion = target_rotation
-		dice_root.position.y = 0.32
+		dice_root.position.y = base_y
 		if result_label:
 			result_label.text = str(roll_result)
 		if roll_button and current_screen != "play":
@@ -1350,7 +1362,7 @@ func _screen_base(_name: String, top_color: Color, bottom_color: Color) -> Contr
 	screen.set_anchors_preset(Control.PRESET_FULL_RECT)
 	var bg := ColorRect.new()
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
-	bg.color = bottom_color
+	bg.color = _with_alpha(bottom_color, 0.86)
 	screen.add_child(bg)
 	for i in range(7):
 		var stripe := ColorRect.new()
