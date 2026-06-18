@@ -78,6 +78,15 @@ const FACE_PIPS := {
 }
 
 const BOARD_CELL := 30.0
+const MAIN_PATH_LENGTH := 44
+const HOME_ENTRY_PROGRESS := 44
+const FINISH_PROGRESS := 50
+
+const PLAYER_NAMES := ["أنت", "عليوش CPU", "Biso CPU", "زهور CPU"]
+const PLAYER_SYMBOLS := ["●", "◆", "●", "▲"]
+const PLAYER_COLORS := [Color("#91eaff"), Color("#ffc1ef"), Color("#95ff7d"), Color("#ffe15b")]
+const PLAYER_START_OFFSETS := [0, 11, 22, 33]
+const SAFE_GLOBAL_INDICES := [0, 8, 11, 19, 22, 30, 33, 41]
 
 var result_rotations := {}
 var selected_skin := 0
@@ -85,6 +94,12 @@ var equipped_skin := 0
 var current_screen := "login"
 var demo_piece_index := 0
 var bet_amount := 500
+var current_player := 0
+var six_chain := 0
+var pending_moves: Array[int] = []
+var awaiting_piece_choice := false
+var game_busy := false
+var game_over := false
 
 var camera: Camera3D
 var dice_root: Node3D
@@ -103,8 +118,18 @@ var dice_description_label: Label
 var market_cards: Array[Button] = []
 var roll_button: Button
 var bet_label: Label
+var status_label: Label
+var turn_label: Label
 var demo_piece: Label
 var board_holder: Control
+var piece_labels: Array = []
+var piece_progress: Array = []
+var home_origins: Array[Vector2] = [
+	Vector2(1.1, 1.2),
+	Vector2(10.2, 1.2),
+	Vector2(10.2, 10.2),
+	Vector2(1.1, 10.2),
+]
 
 var rolling := false
 var roll_time := 0.0
@@ -419,7 +444,7 @@ func _build_mode_screen() -> Control:
 
 	var start := _button("ابدأ!", Vector2(300, 62), Color("#ffdb22"), Color("#412500"))
 	start.position = Vector2(210, 1020)
-	start.pressed.connect(_show_screen.bind("play"))
+	start.pressed.connect(_start_new_match)
 	screen.add_child(start)
 
 	ui_root.add_child(screen)
@@ -440,6 +465,17 @@ func _build_play_screen() -> Control:
 	board_holder.size = Vector2(BOARD_CELL * 15.0, BOARD_CELL * 15.0)
 	screen.add_child(board_holder)
 	_build_ludo_board(board_holder)
+
+	turn_label = _label("دورك", 24, Color("#fff2a6"), HORIZONTAL_ALIGNMENT_CENTER)
+	turn_label.position = Vector2(140, 760)
+	turn_label.size = Vector2(440, 42)
+	screen.add_child(turn_label)
+
+	status_label = _label("ارم النرد. تحتاج 6 لإخراج قطعة من البيت.", 18, Color("#dff5ff"), HORIZONTAL_ALIGNMENT_CENTER)
+	status_label.position = Vector2(70, 800)
+	status_label.size = Vector2(580, 64)
+	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	screen.add_child(status_label)
 
 	var bottom_bar := _panel(Vector2(360, 88), Vector2(180, 940), Color("#15182c"), 18)
 	screen.add_child(bottom_bar)
@@ -575,16 +611,11 @@ func _build_ludo_board(parent: Control) -> void:
 
 	_add_home_tokens(parent, Vector2(1.1, 1.2), Color("#92edff"), "●")
 	_add_home_tokens(parent, Vector2(10.2, 1.2), Color("#ffd2f4"), "◆")
-	_add_home_tokens(parent, Vector2(1.1, 10.2), Color("#ffe05c"), "▲")
 	_add_home_tokens(parent, Vector2(10.2, 10.2), Color("#9cff80"), "●")
+	_add_home_tokens(parent, Vector2(1.1, 10.2), Color("#ffe05c"), "▲")
 
-	demo_piece = _label("●", 27, Color("#fff8c6"), HORIZONTAL_ALIGNMENT_CENTER)
-	demo_piece.add_theme_color_override("font_shadow_color", Color("#9d5400"))
-	demo_piece.add_theme_constant_override("shadow_offset_x", 2)
-	demo_piece.add_theme_constant_override("shadow_offset_y", 2)
-	demo_piece.size = Vector2(BOARD_CELL, BOARD_CELL)
-	demo_piece.position = _board_path_position(0)
-	parent.add_child(demo_piece)
+	_create_game_pieces(parent)
+	_reset_ludo_game()
 
 
 func _ludo_cell_color(x: int, y: int) -> Color:
@@ -641,6 +672,128 @@ func _add_home_tokens(parent: Control, origin: Vector2, color: Color, token_text
 		parent.add_child(token)
 
 
+func _create_game_pieces(parent: Control) -> void:
+	piece_labels.clear()
+	for player in range(4):
+		var player_labels: Array[Label] = []
+		for piece in range(4):
+			var token := _label(PLAYER_SYMBOLS[player], 31, PLAYER_COLORS[player], HORIZONTAL_ALIGNMENT_CENTER)
+			token.size = Vector2(BOARD_CELL * 1.15, BOARD_CELL * 1.15)
+			token.mouse_filter = Control.MOUSE_FILTER_STOP
+			token.add_theme_color_override("font_shadow_color", Color("#231400"))
+			token.add_theme_constant_override("shadow_offset_x", 2)
+			token.add_theme_constant_override("shadow_offset_y", 2)
+			token.gui_input.connect(_on_piece_gui_input.bind(player, piece))
+			parent.add_child(token)
+			player_labels.append(token)
+		piece_labels.append(player_labels)
+
+
+func _reset_ludo_game() -> void:
+	piece_progress.clear()
+	for player in range(4):
+		var player_progress: Array[int] = []
+		for piece in range(4):
+			player_progress.append(-1)
+		piece_progress.append(player_progress)
+
+	current_player = 0
+	six_chain = 0
+	pending_moves.clear()
+	awaiting_piece_choice = false
+	game_busy = false
+	game_over = false
+	_update_all_piece_positions()
+	_start_turn(0)
+
+
+func _on_piece_gui_input(event: InputEvent, player: int, piece: int) -> void:
+	if not awaiting_piece_choice or player != current_player or current_player != 0:
+		return
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		if piece in pending_moves:
+			awaiting_piece_choice = false
+			pending_moves.clear()
+			_clear_piece_highlights()
+			_move_piece(player, piece, roll_result)
+	elif event is InputEventScreenTouch and event.pressed:
+		if piece in pending_moves:
+			awaiting_piece_choice = false
+			pending_moves.clear()
+			_clear_piece_highlights()
+			_move_piece(player, piece, roll_result)
+
+
+func _home_position(player: int, piece: int) -> Vector2:
+	var offsets: Array[Vector2] = [Vector2(0, 0), Vector2(2, 0), Vector2(0, 2), Vector2(2, 2)]
+	return (home_origins[player] + offsets[piece]) * BOARD_CELL + _stack_offset(piece)
+
+
+func _piece_position(player: int, piece: int) -> Vector2:
+	var progress: int = piece_progress[player][piece]
+	if progress < 0:
+		return _home_position(player, piece)
+	if progress >= FINISH_PROGRESS:
+		return Vector2(7, 7) * BOARD_CELL + _finish_offset(player, piece)
+	if progress >= HOME_ENTRY_PROGRESS:
+		return _home_lane_position(player, progress - HOME_ENTRY_PROGRESS, piece)
+	return _board_path_position(_global_index_for_progress(player, progress)) + _stack_offset(piece)
+
+
+func _finish_offset(player: int, piece: int) -> Vector2:
+	var offsets: Array[Vector2] = [Vector2(-13, -13), Vector2(13, -13), Vector2(-13, 13), Vector2(13, 13)]
+	return offsets[piece] + Vector2(player % 2 * 4, player / 2 * 4)
+
+
+func _home_lane_position(player: int, lane_index: int, piece: int) -> Vector2:
+	var lanes: Array = [
+		[Vector2(2, 7), Vector2(3, 7), Vector2(4, 7), Vector2(5, 7), Vector2(6, 7), Vector2(7, 7)],
+		[Vector2(7, 2), Vector2(7, 3), Vector2(7, 4), Vector2(7, 5), Vector2(7, 6), Vector2(7, 7)],
+		[Vector2(12, 7), Vector2(11, 7), Vector2(10, 7), Vector2(9, 7), Vector2(8, 7), Vector2(7, 7)],
+		[Vector2(7, 12), Vector2(7, 11), Vector2(7, 10), Vector2(7, 9), Vector2(7, 8), Vector2(7, 7)],
+	]
+	var cell: Vector2 = lanes[player][clampi(lane_index, 0, 5)]
+	return cell * BOARD_CELL + _stack_offset(piece) + Vector2(0, -2)
+
+
+func _stack_offset(piece: int) -> Vector2:
+	var offsets: Array[Vector2] = [Vector2(-5, -5), Vector2(5, -5), Vector2(-5, 5), Vector2(5, 5)]
+	return offsets[piece]
+
+
+func _update_all_piece_positions() -> void:
+	for player in range(4):
+		for piece in range(4):
+			if piece_labels.size() > player and piece_labels[player].size() > piece:
+				piece_labels[player][piece].position = _piece_position(player, piece)
+	_update_piece_visual_states()
+
+
+func _update_piece_visual_states() -> void:
+	for player in range(4):
+		for piece in range(4):
+			var label: Label = piece_labels[player][piece]
+			var progress: int = piece_progress[player][piece]
+			label.modulate = Color(1, 1, 1, 1.0 if progress < FINISH_PROGRESS else 0.55)
+
+
+func _set_piece_highlights(moves: Array[int]) -> void:
+	_clear_piece_highlights()
+	for piece in moves:
+		var label: Label = piece_labels[current_player][piece]
+		label.scale = Vector2(1.28, 1.28)
+		label.add_theme_color_override("font_outline_color", Color("#fff56d"))
+		label.add_theme_constant_override("outline_size", 6)
+
+
+func _clear_piece_highlights() -> void:
+	for player in range(piece_labels.size()):
+		for piece in range(piece_labels[player].size()):
+			var label: Label = piece_labels[player][piece]
+			label.scale = Vector2.ONE
+			label.add_theme_constant_override("outline_size", 0)
+
+
 func _board_path_position(index: int) -> Vector2:
 	var path: Array[Vector2] = [
 		Vector2(1, 6), Vector2(2, 6), Vector2(3, 6), Vector2(4, 6), Vector2(5, 6),
@@ -658,12 +811,243 @@ func _board_path_position(index: int) -> Vector2:
 
 
 func _move_demo_piece(steps: int) -> void:
-	if not is_instance_valid(demo_piece):
+	# Kept for compatibility with the first visual prototype. The complete game
+	# now moves real player tokens through _move_piece().
+	pass
+
+
+func _global_index_for_progress(player: int, progress: int) -> int:
+	return (PLAYER_START_OFFSETS[player] + progress) % MAIN_PATH_LENGTH
+
+
+func _is_safe_global_index(index: int) -> bool:
+	return index in SAFE_GLOBAL_INDICES
+
+
+func _get_valid_moves(player: int, die: int) -> Array[int]:
+	var moves: Array[int] = []
+	for piece in range(4):
+		var progress: int = piece_progress[player][piece]
+		if progress < 0:
+			if die == 6:
+				moves.append(piece)
+		elif progress < FINISH_PROGRESS and progress + die <= FINISH_PROGRESS:
+			moves.append(piece)
+	return moves
+
+
+func _start_turn(player: int) -> void:
+	if game_over:
 		return
+	current_player = player
+	awaiting_piece_choice = false
+	pending_moves.clear()
+	_clear_piece_highlights()
+	_update_turn_ui()
+
+	if current_screen == "play" and current_player != 0:
+		await get_tree().create_timer(0.85).timeout
+		if current_screen == "play" and current_player == player and not rolling and not game_busy and not game_over:
+			_roll_dice()
+
+
+func _advance_turn() -> void:
+	var next_player := (current_player + 1) % 4
+	_start_turn(next_player)
+
+
+func _update_turn_ui() -> void:
+	if turn_label:
+		turn_label.text = "الدور: " + PLAYER_NAMES[current_player]
+	if status_label:
+		if current_player == 0:
+			status_label.text = "دورك. ارم النرد، ثم اختر قطعة مضيئة إذا وجدت أكثر من حركة."
+		else:
+			status_label.text = PLAYER_NAMES[current_player] + " يفكر ويرمي النرد..."
+	if roll_button:
+		roll_button.disabled = current_player != 0 or rolling or game_busy or game_over
+
+
+func _handle_roll_result() -> void:
+	if current_screen != "play":
+		if result_label:
+			result_label.text = str(roll_result)
+		if roll_button:
+			roll_button.disabled = false
+		game_busy = false
+		return
+
+	if roll_result == 6:
+		six_chain += 1
+	else:
+		six_chain = 0
+
+	if six_chain >= 3:
+		if status_label:
+			status_label.text = PLAYER_NAMES[current_player] + " حصل على ثلاث 6 متتالية. ينتقل الدور."
+		six_chain = 0
+		game_busy = false
+		await get_tree().create_timer(0.7).timeout
+		_advance_turn()
+		return
+
+	var moves := _get_valid_moves(current_player, roll_result)
+	if moves.is_empty():
+		if status_label:
+			status_label.text = "لا توجد حركة قانونية لـ " + PLAYER_NAMES[current_player] + "."
+		game_busy = false
+		await get_tree().create_timer(0.75).timeout
+		if roll_result == 6:
+			_start_turn(current_player)
+		else:
+			_advance_turn()
+		return
+
+	if current_player == 0:
+		if moves.size() == 1:
+			await get_tree().create_timer(0.25).timeout
+			_move_piece(current_player, moves[0], roll_result)
+		else:
+			awaiting_piece_choice = true
+			pending_moves = moves
+			game_busy = false
+			_set_piece_highlights(moves)
+			if status_label:
+				status_label.text = "اختر القطعة المضيئة التي تريد تحريكها " + str(roll_result) + " خطوات."
+	else:
+		var chosen := _choose_cpu_move(current_player, moves, roll_result)
+		await get_tree().create_timer(0.35).timeout
+		_move_piece(current_player, chosen, roll_result)
+
+
+func _choose_cpu_move(player: int, moves: Array[int], die: int) -> int:
+	var best_piece: int = moves[0]
+	var best_score := -99999
+	for piece in moves:
+		var score := _score_move(player, piece, die)
+		if score > best_score:
+			best_score = score
+			best_piece = piece
+	return best_piece
+
+
+func _score_move(player: int, piece: int, die: int) -> int:
+	var progress: int = piece_progress[player][piece]
+	var new_progress := 0 if progress < 0 else progress + die
+	var score := new_progress
+	if progress < 0 and die == 6:
+		score += 35
+	if new_progress == FINISH_PROGRESS:
+		score += 120
+	if new_progress < HOME_ENTRY_PROGRESS and _would_capture(player, new_progress):
+		score += 95
+	if new_progress < HOME_ENTRY_PROGRESS and _is_safe_global_index(_global_index_for_progress(player, new_progress)):
+		score += 15
+	return score
+
+
+func _would_capture(player: int, new_progress: int) -> bool:
+	var global_index := _global_index_for_progress(player, new_progress)
+	if _is_safe_global_index(global_index):
+		return false
+	for opponent in range(4):
+		if opponent == player:
+			continue
+		for piece in range(4):
+			var opponent_progress: int = piece_progress[opponent][piece]
+			if opponent_progress >= 0 and opponent_progress < HOME_ENTRY_PROGRESS:
+				if _global_index_for_progress(opponent, opponent_progress) == global_index:
+					return true
+	return false
+
+
+func _move_piece(player: int, piece: int, die: int) -> void:
+	game_busy = true
+	awaiting_piece_choice = false
+	_clear_piece_highlights()
+	if roll_button:
+		roll_button.disabled = true
+
+	if status_label:
+		status_label.text = PLAYER_NAMES[player] + " يحرك قطعة " + str(die) + " خطوات..."
+
+	var progress: int = piece_progress[player][piece]
+	if progress < 0:
+		piece_progress[player][piece] = 0
+		await _animate_piece_to(player, piece, _piece_position(player, piece), 0.26)
+	else:
+		for step in range(die):
+			piece_progress[player][piece] += 1
+			await _animate_piece_to(player, piece, _piece_position(player, piece), 0.16)
+
+	await _resolve_capture(player, piece)
+	_update_all_piece_positions()
+
+	if _player_has_won(player):
+		game_over = true
+		if status_label:
+			status_label.text = PLAYER_NAMES[player] + " فاز! كل القطع وصلت للنهاية."
+		if turn_label:
+			turn_label.text = "انتهت اللعبة"
+		if roll_button:
+			roll_button.disabled = true
+		game_busy = false
+		return
+
+	game_busy = false
+	if die == 6:
+		if status_label:
+			status_label.text = PLAYER_NAMES[player] + " حصل على 6 وله رمية إضافية."
+		await get_tree().create_timer(0.55).timeout
+		_start_turn(player)
+	else:
+		await get_tree().create_timer(0.45).timeout
+		_advance_turn()
+
+
+func _animate_piece_to(player: int, piece: int, target: Vector2, duration: float) -> void:
+	var label: Label = piece_labels[player][piece]
+	var start_y := label.position.y
 	var tween := create_tween()
-	for i in range(steps):
-		demo_piece_index = (demo_piece_index + 1) % 44
-		tween.tween_property(demo_piece, "position", _board_path_position(demo_piece_index), 0.18).set_trans(Tween.TRANS_SINE)
+	tween.set_parallel(true)
+	tween.tween_property(label, "position", target, duration).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
+	tween.tween_property(label, "scale", Vector2(1.22, 1.22), duration * 0.45).set_trans(Tween.TRANS_BACK)
+	await tween.finished
+	var settle := create_tween()
+	settle.tween_property(label, "scale", Vector2.ONE, 0.08)
+	await settle.finished
+
+
+func _resolve_capture(player: int, moved_piece: int) -> void:
+	var progress: int = piece_progress[player][moved_piece]
+	if progress < 0 or progress >= HOME_ENTRY_PROGRESS:
+		return
+	var global_index := _global_index_for_progress(player, progress)
+	if _is_safe_global_index(global_index):
+		return
+
+	var captured := false
+	for opponent in range(4):
+		if opponent == player:
+			continue
+		for piece in range(4):
+			var opponent_progress: int = piece_progress[opponent][piece]
+			if opponent_progress >= 0 and opponent_progress < HOME_ENTRY_PROGRESS:
+				if _global_index_for_progress(opponent, opponent_progress) == global_index:
+					piece_progress[opponent][piece] = -1
+					captured = true
+					await _animate_piece_to(opponent, piece, _home_position(opponent, piece), 0.28)
+	if captured and status_label:
+		status_label.text = PLAYER_NAMES[player] + " أكل قطعة خصم!"
+		_spawn_sparks(34, 0.8)
+		await get_tree().create_timer(0.35).timeout
+
+
+func _player_has_won(player: int) -> bool:
+	for piece in range(4):
+		if piece_progress[player][piece] < FINISH_PROGRESS:
+			return false
+	return true
 
 
 func _show_screen(name: String) -> void:
@@ -671,6 +1055,13 @@ func _show_screen(name: String) -> void:
 	for key in screens.keys():
 		screens[key].visible = key == name
 	_apply_screen_camera()
+	if name == "play":
+		_update_turn_ui()
+
+
+func _start_new_match() -> void:
+	_show_screen("play")
+	_reset_ludo_game()
 
 
 func _apply_screen_camera() -> void:
@@ -861,6 +1252,12 @@ func _on_dice_input(_camera: Node, event: InputEvent, _position: Vector3, _norma
 func _roll_dice() -> void:
 	if rolling:
 		return
+	if current_screen == "play":
+		if game_busy or awaiting_piece_choice or game_over:
+			return
+		if current_player == 0 and roll_button and roll_button.disabled:
+			return
+		game_busy = true
 	rolling = true
 	roll_time = 0.0
 	roll_result = randi_range(1, 6)
@@ -898,11 +1295,10 @@ func _update_roll(delta: float) -> void:
 		dice_root.position.y = 0.32
 		if result_label:
 			result_label.text = str(roll_result)
-		if roll_button:
+		if roll_button and current_screen != "play":
 			roll_button.disabled = false
 		_spawn_sparks(54, 1.2 if roll_result == 6 else 0.74)
-		if current_screen == "play":
-			_move_demo_piece(roll_result)
+		_handle_roll_result()
 
 
 func _spawn_sparks(count: int, force: float) -> void:
