@@ -24,27 +24,34 @@ These sources were reviewed for dice and cinematic companion assets.
   - License: CC0
   - Note: STL assets should be converted and optimized in Blender before importing into Godot.
 
-## Current implementation
+## Current implementation status
 
-The game now includes real generated glTF dice assets under:
+The temporary generated dice assets were removed.
+
+The project now integrates one real downloaded open-source dice asset:
 
 ```text
-assets/dice_models/
+addons/dice_roller/dice/d6_dice/d6.glb
 ```
 
-Included files:
+Source:
 
-- `Dice_Gold.gltf`
-- `Dice_Snake.gltf`
-- `Dice_Lion.gltf`
-- `Dice_Eagle.gltf`
+```text
+external/dice-research/godot-dice-roller/
+https://github.com/vokimon/godot-dice-roller
+```
 
-Each file has its own mesh/material layout and matching `.bin` buffer.
+This is used as the first real test dice in gameplay while the full production dice system is rebuilt.
 
-The game also uses procedural Godot 3D effects for premium dice results:
+Downloaded research sources are stored under:
 
-- Snake effect for selected skins with `effect = "snake"`.
-- Lion/mane effect for selected skins with `effect = "lion"`.
-- Eagle/wings effect for selected skins with `effect = "eagle"`.
+```text
+external/dice-research/
+```
 
-This keeps the APK self-contained and avoids shipping unverified third-party downloads. When production art is selected, place GLB files under `assets/models/` and replace the procedural factories in `scripts/dice_preview.gd`.
+Downloaded successfully:
+
+- `godot-dice-roller`
+- `dice-box`
+
+Itch.io assets require manual browser download because the zip files are gated behind a purchase/session flow even when they are free or name-your-own-price.

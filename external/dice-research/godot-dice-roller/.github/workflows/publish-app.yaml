@@ -1,0 +1,252 @@
+name: Build and publish application
+
+on:
+  workflow_dispatch:
+    inputs:
+        build_web:
+            type: boolean
+            description: Build for Web
+            default: true
+        build_linux:
+            type: boolean
+            description: Build for Linux
+            default: true
+        build_windows:
+            type: boolean
+            description: Build for Windows
+            default: true
+        build_android:
+            type: boolean
+            description: Build for Android
+            default: true
+        build_mac:
+            type: boolean
+            description: Build for Mac (Not working yet)
+            default: false
+        upload_itchio:
+            type: boolean
+            description: Upload to itch.io
+            default: false
+        upload_github_release:
+            type: boolean
+            description: Upload as github release
+            default: false
+        upload_github_pages:
+            type: boolean
+            description: Upload web app as github page
+            default: false
+  push:
+    tags:
+      - '.+-[0-9]+.[0-9]+.[0-9]+'
+
+env:
+  GODOT_VERSION: 4.4.1
+  PROJECT_PATH: .
+
+  GODOT_ANDROID_KEYSTORE_RELEASE_USER:  ${{ secrets.ANDROID_KEYSTORE_RELEASE_ALIAS }}
+  GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_RELEASE_PASSWORD }}
+  GODOT_ANDROID_KEYSTORE_DEBUG_USER:  ${{ secrets.ANDROID_KEYSTORE_DEBUG_ALIAS }}
+  GODOT_ANDROID_KEYSTORE_DEBUG_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_DEBUG_PASSWORD }}
+  BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+
+  #ANDROID_SERVICE_ACCOUNT_JSON: ${{ secrets.ANDROID_SERVICE_ACCOUNT_JSON }}
+  #ANDROID_STORE_PASSWORD: ${{ secrets.ANDROID_STORE_PASSWORD }}
+
+  WORKING_DIRECTORY: .
+  APPNAME: Godot Dice Roller
+  APPDOMAIN: net.canvoki.godot_dice_roller
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, skipping runs queued between the run in-progress and latest queued.
+# However, do NOT cancel in-progress runs as we want to allow these production deployments to complete.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    container:
+      image: barichello/godot-ci:latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: ⬇️ Install build dependencies
+        shell: bash
+        run: |
+          apt update
+          apt install -y imagemagick python3-pip python-is-python3 apksigner
+          echo ~/.local/bin >> $GITHUB_PATH
+          mkdir -p ~/.cache/pip
+          pip install --user "godot-asset-library-client>=0.5" lxml
+          wget --no-verbose https://github.com/cli/cli/releases/download/v2.74.2/gh_2.74.2_linux_amd64.deb
+          dpkg -i gh_2.74.2_linux_amd64.deb
+
+      - name: ⬇️ Checkout source code
+        uses: actions/checkout@v2
+        with:
+          lfs: true
+          submodules: true
+
+      - name: Setup symlink for GUT
+        run: |
+          mkdir -p addons
+          ln -sf ../externals/gut/addons/gut addons/gut
+  
+      - name: Setup godot environment
+        run: |
+          # Barichello image and act cli setup config and templates
+          # at /root as home, but Github action runner uses /home/github.
+          echo Home set to $HOME
+          if [ "$HOME" != "/root" ]; then
+              echo Copying image config and templates to actual home from /root
+              mkdir -p $HOME/.local/share/godot
+              cp -rv /root/.local/share/godot/export_templates $HOME/.local/share/godot
+              mkdir -p ~/.config
+              cp -rv /root/.config/godot ~/.config
+          else
+              echo No need to copy image home, already at $HOME
+          fi
+          mkdir -p .godot/editor .godot/imported
+
+      - name: 🪪 Read version number and version code
+        shell: bash
+        run: |
+          python tools/generate-metadata.py # generates android metadata from README.md, CHANGES.md and screenshots
+          #GODOT_VERSION=$(godot-asset-library-client project-field godot_version)
+          GODOT_VERSION=4.4.1
+          APPNAME=$(cat fastlane/metadata/en-US/title.txt | sed 's/ //g')
+          VERSION_NAME=$(godot-asset-library-client project-field project_version)
+          IFS='.' read -r -a v <<<"$VERSION_NAME"
+          VERSION_CODE=$(printf "%02d" ${v[*]})
+          EXPORT_NAME=$(cat fastlane/metadata/en-US/title.txt | sed 's/ /-/g' | tr '[:upper:]' '[:lower:]')
+          ASSET_PREFIX="$EXPORT_NAME-$VERSION_NAME"
+
+          echo "GODOT_VERSION=$GODOT_VERSION" >> $GITHUB_ENV
+          echo "APPNAME=$APPNAME" >> $GITHUB_ENV
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+          echo "EXPORT_NAME=$EXPORT_NAME" >> $GITHUB_ENV
+          echo "ASSET_PREFIX=$ASSET_PREFIX" >> $GITHUB_ENV
+
+      - name: 🏗🕸️ Web Build
+        shell: bash
+        run: |
+          mkdir -v -p build/web
+          godot -v --headless --export-release "Web" ./build/web/index.html
+          # https://github.com/godotengine/godot-proposals/issues/6616#issuecomment-1513340085
+          echo Adding coi-service-worker...
+          git clone https://github.com/gzuidhof/coi-serviceworker.git
+          mv coi-serviceworker/coi-serviceworker.js build/web/coi-serviceworker.js
+          sed -i '3 i <script src="coi-serviceworker.js"></script>' build/web/index.html
+          echo Disabling jekyll compilation in github pages
+          touch build/web/.nojekyll
+          pushd build/web
+              zip -r ../$ASSET_PREFIX-html.zip .
+          popd
+
+      - name: 🏗️🐧 Linux Build
+        shell: bash
+        run: |
+          mkdir -v -p build/linux
+          godot -v --headless --export-release "Linux" ./build/linux/$ASSET_PREFIX-linux.x86_64
+          pushd build/linux
+              tar cvfz ../$ASSET_PREFIX-linux.tar.gz .
+          popd
+
+      - name: 🏗️🪟 Windows Build
+        shell: bash
+        run: |
+          mkdir -v -p build/windows
+          godot -v --headless --export-release "Windows Desktop" ./build/windows/$ASSET_PREFIX-windows.exe
+          pushd build/windows
+              zip -r ../$ASSET_PREFIX-windows.zip .
+          popd
+
+      - name: 🔑🤖Create Android keystores
+        run: |
+          if [ -n "${{secrets.ANDROID_KEYSTORE_RELEASE_BASE64}}" ]; then
+            echo ${{secrets.ANDROID_KEYSTORE_RELEASE_BASE64}} | base64 --decode > release.keystore
+            echo "GODOT_ANDROID_KEYSTORE_RELEASE_PATH=release.keystore" >> $GITHUB_ENV
+          fi
+          if [ -n "${{secrets.ANDROID_KEYSTORE_DEBUG_BASE64}}" ]; then
+            echo ${{secrets.ANDROID_KEYSTORE_DEBUG_BASE64}} | base64 --decode > debug.keystore
+            echo "GODOT_ANDROID_KEYSTORE_DEBUG_PATH=debug.keystore" >> $GITHUB_ENV
+          fi
+
+      - name: 🏗️🤖 Android Build
+        run: |
+          mkdir -p build/android
+          timeout 60s godot -v --import --headless --quit < /dev/null || true
+          godot -v --export-release "Android" --headless --quit ./build/android/$ASSET_PREFIX-android.apk < /dev/null
+
+      - name: 🔑🤖 Sign android package
+        run: |
+          # Godot should sign the apk with the proper envs, but it doesnt.
+          apksigner sign \
+            --ks "${GODOT_ANDROID_KEYSTORE_RELEASE_PATH}" \
+            --ks-pass env:GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD \
+            --ks-key-alias "${{env.GODOT_ANDROID_KEYSTORE_RELEASE_USER}}" \
+            ./build/android/$ASSET_PREFIX-android.apk
+
+      # TODO
+      #- name: 🏗️🍎 Mac Build
+      #  run: |
+      #    mkdir -v -p build/mac
+      #    godot -v --headless --export-release "Mac OSX" ./build/mac/$ASSET_PREFIX-mac.zip
+
+      - name: 🔼🕸 Deploy Web
+        uses: peaceiris/actions-gh-pages@v4
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./build/web
+
+      - name: 🔼 Upload Artifacts
+        if: ${{ inputs.upload_github_pages }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{env.ASSET_PREFIX}}-exports
+          path: build
+
+      - name: Github Release create
+        if: ${{ inputs.upload_github_release }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+            # TODO: upload only the built ones
+            # TODO: support updating existing release
+            git config --global --add safe.directory $(pwd)
+            # Until published, will refer an untagged commit
+            gh release create ${{ env.ASSET_PREFIX }} \
+                --verify-tag \
+                --title "${{ env.ASSET_PREFIX }}" \
+                --notes-file fastlane/metadata/en-US/changelogs/${{env.VERSION_CODE}}.txt \
+                "build/$ASSET_PREFIX-html.zip" \
+                "build/$ASSET_PREFIX-windows.zip" \
+                "build/$ASSET_PREFIX-linux.tar.gz" \
+                "build/android/$ASSET_PREFIX-android.apk" \
+                --draft
+            gh release list
+
+      - name: 🔼 Upload to itch.io
+        if: ${{ inputs.upload_itchio && env.BUTLER_API_KEY != '' }}
+        env:
+          BUTLER_API_KEY: ${{ secrets.BUTLER_API_KEY }}
+          ITCH_GAME: ${{ secrets.ITCHIO_GAME }}
+          ITCH_USER: ${{ secrets.ITCHIO_USERNAME }}
+        shell: bash
+        run: |
+          butler push build/windows $ITCH_USER/$ITCH_GAME:windows --userversion $VERSION_NAME
+          butler push build/linux $ITCH_USER/$ITCH_GAME:linux --userversion $VERSION_NAME
+          butler push build/web $ITCH_USER/$ITCH_GAME:web --userversion $VERSION_NAME
+          butler push build/android $ITCH_USER/$ITCH_GAME:android --userversion $VERSION_NAME
+          #butler push build/mac $ITCH_USER/$ITCH_GAME:mac --userversion $VERSION_NAME
+
+

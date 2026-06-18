@@ -14,7 +14,7 @@ const SKINS := [
 		"metallic": 0.9,
 		"roughness": 0.16,
 		"effect": "lion",
-		"model": "res://assets/dice_models/Dice_Gold.gltf",
+		"model": "res://addons/dice_roller/dice/d6_dice/d6.glb",
 	},
 	{
 		"name": "Inferno Core",
@@ -29,7 +29,7 @@ const SKINS := [
 		"metallic": 0.45,
 		"roughness": 0.28,
 		"effect": "explosion",
-		"model": "res://assets/dice_models/Dice_Snake.gltf",
+		"model": "res://addons/dice_roller/dice/d6_dice/d6.glb",
 	},
 	{
 		"name": "Frost Crystal",
@@ -44,7 +44,7 @@ const SKINS := [
 		"metallic": 0.15,
 		"roughness": 0.05,
 		"effect": "crack",
-		"model": "res://assets/dice_models/Dice_Lion.gltf",
+		"model": "res://addons/dice_roller/dice/d6_dice/d6.glb",
 	},
 	{
 		"name": "Galaxy Void",
@@ -59,7 +59,7 @@ const SKINS := [
 		"metallic": 0.62,
 		"roughness": 0.17,
 		"effect": "car",
-		"model": "res://assets/dice_models/Dice_Eagle.gltf",
+		"model": "res://addons/dice_roller/dice/d6_dice/d6.glb",
 	},
 	{
 		"name": "Emerald Royal",
@@ -74,7 +74,7 @@ const SKINS := [
 		"metallic": 0.62,
 		"roughness": 0.14,
 		"effect": "car",
-		"model": "res://assets/dice_models/Dice_Snake.gltf",
+		"model": "res://addons/dice_roller/dice/d6_dice/d6.glb",
 	},
 ]
 
@@ -93,6 +93,7 @@ const HOME_ENTRY_PROGRESS := 52
 const FINISH_PROGRESS := 58
 const HUMAN_TURN_SECONDS := 10.0
 const HUMAN_CHOICE_SECONDS := 6.0
+const DICE_SYSTEM_DISABLED := false
 
 const PLAYER_NAMES := ["أنت", "زهور CPU", "عليوش CPU", "Biso Nova CPU"]
 const PLAYER_SYMBOLS := ["⬮", "⬮", "⬮", "⬮"]
@@ -532,12 +533,19 @@ func _build_play_screen() -> Control:
 	var bottom_bar := _panel(Vector2(560, 78), Vector2(80, 1082), Color("#15182c"), 18)
 	screen.add_child(bottom_bar)
 
-	_build_play_dice_viewport(screen)
-	roll_button = _button("", Vector2(116, 116), Color.TRANSPARENT, Color.TRANSPARENT)
-	roll_button.position = Vector2(106, 998)
-	_make_button_transparent(roll_button)
-	roll_button.pressed.connect(_roll_dice)
-	screen.add_child(roll_button)
+	if not DICE_SYSTEM_DISABLED:
+		_build_play_dice_viewport(screen)
+		roll_button = _button("", Vector2(116, 116), Color.TRANSPARENT, Color.TRANSPARENT)
+		roll_button.position = Vector2(106, 998)
+		_make_button_transparent(roll_button)
+		roll_button.pressed.connect(_roll_dice)
+		screen.add_child(roll_button)
+	else:
+		var dice_removed := _label("تم حذف نظام النرد التجريبي لإعادة بنائه من مصدر احترافي", 16, Color("#ffdca8"), HORIZONTAL_ALIGNMENT_CENTER)
+		dice_removed.position = Vector2(74, 1024)
+		dice_removed.size = Vector2(570, 48)
+		dice_removed.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		screen.add_child(dice_removed)
 
 	result_label = _label("جاهز", 30, Color("#fff4aa"), HORIZONTAL_ALIGNMENT_CENTER)
 	result_label.position = Vector2(20, 14)
@@ -574,24 +582,25 @@ func _build_play_screen() -> Control:
 	restart.pressed.connect(_start_new_match)
 	screen.add_child(restart)
 
-	var dice_strip_label := _label("نرداتي", 16, Color("#fff2a6"), HORIZONTAL_ALIGNMENT_CENTER)
-	dice_strip_label.position = Vector2(34, 1162)
-	dice_strip_label.size = Vector2(92, 28)
-	screen.add_child(dice_strip_label)
+	if not DICE_SYSTEM_DISABLED:
+		var dice_strip_label := _label("نرداتي", 16, Color("#fff2a6"), HORIZONTAL_ALIGNMENT_CENTER)
+		dice_strip_label.position = Vector2(34, 1162)
+		dice_strip_label.size = Vector2(92, 28)
+		screen.add_child(dice_strip_label)
 
-	var dice_strip := HBoxContainer.new()
-	dice_strip.position = Vector2(34, 1192)
-	dice_strip.size = Vector2(360, 56)
-	dice_strip.add_theme_constant_override("separation", 8)
-	screen.add_child(dice_strip)
-	play_skin_buttons.clear()
-	for i in range(SKINS.size()):
-		var skin: Dictionary = SKINS[i]
-		var skin_button := _button(_dice_face(i % 6 + 1), Vector2(56, 50), skin["body"], Color.WHITE)
-		skin_button.add_theme_font_size_override("font_size", 28)
-		skin_button.pressed.connect(_select_skin.bind(i))
-		play_skin_buttons.append(skin_button)
-		dice_strip.add_child(skin_button)
+		var dice_strip := HBoxContainer.new()
+		dice_strip.position = Vector2(34, 1192)
+		dice_strip.size = Vector2(360, 56)
+		dice_strip.add_theme_constant_override("separation", 8)
+		screen.add_child(dice_strip)
+		play_skin_buttons.clear()
+		for i in range(SKINS.size()):
+			var skin: Dictionary = SKINS[i]
+			var skin_button := _button(_dice_face(i % 6 + 1), Vector2(56, 50), skin["body"], Color.WHITE)
+			skin_button.add_theme_font_size_override("font_size", 28)
+			skin_button.pressed.connect(_select_skin.bind(i))
+			play_skin_buttons.append(skin_button)
+			dice_strip.add_child(skin_button)
 
 	ui_root.add_child(screen)
 	return screen
@@ -1761,6 +1770,10 @@ func _on_dice_input(_camera: Node, event: InputEvent, _position: Vector3, _norma
 
 
 func _roll_dice() -> void:
+	if DICE_SYSTEM_DISABLED:
+		if status_label:
+			status_label.text = "نظام النرد التجريبي محذوف. سيتم بناء نظام احترافي جديد من المصادر المختارة."
+		return
 	if rolling:
 		return
 	if current_screen == "play":
