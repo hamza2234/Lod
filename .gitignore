@@ -1,4 +1,7 @@
 node_modules/
 dist/
+android-kotlin-host/.gradle/
+android-kotlin-host/**/build/
+android-kotlin-host/app/src/main/assets/
 .DS_Store
 *.log

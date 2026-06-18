@@ -15,6 +15,12 @@ android {
         versionCode = 1
         versionName = "0.1.0"
     }
+
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
 }
 
 val syncGodotProject by tasks.registering(Sync::class) {
@@ -31,5 +37,6 @@ tasks.matching { it.name.startsWith("pre") && it.name.endsWith("Build") }.config
 }
 
 dependencies {
+    implementation("androidx.fragment:fragment:1.8.5")
     implementation("org.godotengine:godot:4.4.1.stable")
 }
