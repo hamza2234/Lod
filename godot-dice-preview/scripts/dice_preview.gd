@@ -126,6 +126,7 @@ var result_label: Label
 var dice_name_label: Label
 var dice_description_label: Label
 var market_cards: Array[Button] = []
+var play_skin_buttons: Array[Button] = []
 var roll_button: Button
 var bet_label: Label
 var status_label: Label
@@ -532,6 +533,25 @@ func _build_play_screen() -> Control:
 	restart.pressed.connect(_start_new_match)
 	screen.add_child(restart)
 
+	var dice_strip_label := _label("نرداتي", 16, Color("#fff2a6"), HORIZONTAL_ALIGNMENT_CENTER)
+	dice_strip_label.position = Vector2(34, 1162)
+	dice_strip_label.size = Vector2(92, 28)
+	screen.add_child(dice_strip_label)
+
+	var dice_strip := HBoxContainer.new()
+	dice_strip.position = Vector2(34, 1192)
+	dice_strip.size = Vector2(360, 56)
+	dice_strip.add_theme_constant_override("separation", 8)
+	screen.add_child(dice_strip)
+	play_skin_buttons.clear()
+	for i in range(SKINS.size()):
+		var skin: Dictionary = SKINS[i]
+		var skin_button := _button(_dice_face(i % 6 + 1), Vector2(56, 50), skin["body"], Color.WHITE)
+		skin_button.add_theme_font_size_override("font_size", 28)
+		skin_button.pressed.connect(_select_skin.bind(i))
+		play_skin_buttons.append(skin_button)
+		dice_strip.add_child(skin_button)
+
 	ui_root.add_child(screen)
 	return screen
 
@@ -570,7 +590,7 @@ func _build_market_screen() -> Control:
 	market_cards.clear()
 	for i in range(SKINS.size()):
 		var skin: Dictionary = SKINS[i]
-		var card := _button("%s\n%s • %s 🪙" % [skin["arabic"], skin["rarity"], skin["price"]], Vector2(250, 88), skin["body"], Color.WHITE)
+		var card := _button("%s\n%s • %s • %s 🪙" % [skin["arabic"], skin["rarity"], skin["effect"], skin["price"]], Vector2(250, 88), skin["body"], Color.WHITE)
 		card.pressed.connect(_select_skin.bind(i))
 		market_cards.append(card)
 		grid.add_child(card)
@@ -1252,16 +1272,38 @@ func _select_skin(index: int) -> void:
 	if dice_name_label:
 		dice_name_label.text = "%s / %s" % [skin["arabic"], skin["name"]]
 	if dice_description_label:
-		dice_description_label.text = "%s\nالسعر: %s 🪙" % [skin["description"], skin["price"]]
+		dice_description_label.text = "%s\nمؤثر 6: %s • السعر: %s 🪙" % [skin["description"], skin["effect"], skin["price"]]
 
 	for i in range(market_cards.size()):
 		market_cards[i].disabled = i == index
-		market_cards[i].text = "%s\n%s • %s 🪙%s" % [
+		market_cards[i].text = "%s\n%s • %s • %s 🪙%s" % [
 			SKINS[i]["arabic"],
 			SKINS[i]["rarity"],
+			SKINS[i]["effect"],
 			SKINS[i]["price"],
 			" • مجهز" if i == equipped_skin else "",
 		]
+	for i in range(play_skin_buttons.size()):
+		var skin_button := play_skin_buttons[i]
+		var skin_i: Dictionary = SKINS[i]
+		skin_button.disabled = i == index
+		skin_button.text = _dice_face(i % 6 + 1)
+		skin_button.add_theme_color_override("font_color", _readable_dice_font_color(skin_i["body"]))
+		var style := StyleBoxFlat.new()
+		style.bg_color = skin_i["body"]
+		style.border_color = skin_i["accent"] if i == index else _with_alpha(Color.WHITE, 0.25)
+		style.border_width_left = 4 if i == index else 2
+		style.border_width_right = style.border_width_left
+		style.border_width_top = style.border_width_left
+		style.border_width_bottom = style.border_width_left
+		style.corner_radius_top_left = 10
+		style.corner_radius_top_right = 10
+		style.corner_radius_bottom_left = 10
+		style.corner_radius_bottom_right = 10
+		skin_button.add_theme_stylebox_override("normal", style)
+		skin_button.add_theme_stylebox_override("hover", style)
+		skin_button.add_theme_stylebox_override("pressed", style)
+		skin_button.add_theme_stylebox_override("disabled", style)
 
 	dice_body.material_override = _make_material(
 		skin["body"],
@@ -1285,6 +1327,9 @@ func _select_skin(index: int) -> void:
 	under_light.light_color = skin["accent"]
 	ring.material_override = _make_material(skin["accent"], skin["accent"], 0.2, 0.12, 1.8)
 	_rebuild_pips()
+	_style_dice_button()
+	if roll_button and not rolling:
+		roll_button.text = _dice_face(max(1, roll_result))
 
 
 func _rebuild_pips() -> void:
@@ -1551,9 +1596,10 @@ func _button(text: String, size: Vector2, color: Color, font_color: Color) -> Bu
 func _style_dice_button() -> void:
 	if not roll_button:
 		return
+	var skin: Dictionary = SKINS[selected_skin]
 	var normal := StyleBoxFlat.new()
-	normal.bg_color = Color("#d3a55d")
-	normal.border_color = Color("#f9df9b")
+	normal.bg_color = skin["body"]
+	normal.border_color = skin["accent"]
 	normal.border_width_left = 5
 	normal.border_width_right = 5
 	normal.border_width_top = 5
@@ -1565,13 +1611,18 @@ func _style_dice_button() -> void:
 	normal.shadow_color = _with_alpha(Color.BLACK, 0.42)
 	normal.shadow_size = 8
 	var pressed := normal.duplicate() as StyleBoxFlat
-	pressed.bg_color = Color("#b9853e")
+	pressed.bg_color = skin["edge"]
 	roll_button.add_theme_stylebox_override("normal", normal)
 	roll_button.add_theme_stylebox_override("hover", normal)
 	roll_button.add_theme_stylebox_override("pressed", pressed)
 	roll_button.add_theme_stylebox_override("disabled", normal)
-	roll_button.add_theme_color_override("font_color", Color("#4b2500"))
-	roll_button.add_theme_color_override("font_disabled_color", Color("#4b2500"))
+	roll_button.add_theme_color_override("font_color", _readable_dice_font_color(skin["body"]))
+	roll_button.add_theme_color_override("font_disabled_color", _readable_dice_font_color(skin["body"]))
+
+
+func _readable_dice_font_color(color: Color) -> Color:
+	var brightness := color.r * 0.299 + color.g * 0.587 + color.b * 0.114
+	return Color("#2a1400") if brightness > 0.55 else Color("#fff4ca")
 
 
 func _dice_face(value: int) -> String:
