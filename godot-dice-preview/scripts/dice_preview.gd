@@ -115,6 +115,9 @@ var dice_root: Node3D
 var dice_body: MeshInstance3D
 var pip_root: Node3D
 var cinematic_root: Node3D
+var play_dice_viewport: SubViewport
+var play_dice_root: Node3D
+var play_dice_pip_root: Node3D
 var ring: MeshInstance3D
 var accent_light: OmniLight3D
 var under_light: OmniLight3D
@@ -176,9 +179,15 @@ func _process(delta: float) -> void:
 	else:
 		dice_root.position.y = _dice_base_y() + sin(time * 1.35) * 0.045
 		dice_root.rotate_y(delta * 0.22)
+		if play_dice_root:
+			play_dice_root.rotation.y += delta * 0.9
+			play_dice_root.position.y = sin(time * 1.7) * 0.05
 
 	_update_sparks(delta)
 	_update_turn_timer()
+	if play_dice_root and rolling and current_screen == "play":
+		play_dice_root.rotation += Vector3(delta * 8.0, delta * 11.0, delta * 6.5)
+		play_dice_root.position.y = abs(sin(time * 10.0)) * 0.28
 	if roll_button:
 		roll_button.pivot_offset = roll_button.size / 2.0
 		if rolling and current_screen == "play":
@@ -506,10 +515,10 @@ func _build_play_screen() -> Control:
 	var bottom_bar := _panel(Vector2(560, 78), Vector2(80, 1082), Color("#15182c"), 18)
 	screen.add_child(bottom_bar)
 
-	roll_button = _button("⚂", Vector2(92, 92), Color("#d5b47b"), Color("#402400"))
-	roll_button.position = Vector2(118, 1012)
-	roll_button.add_theme_font_size_override("font_size", 48)
-	_style_dice_button()
+	_build_play_dice_viewport(screen)
+	roll_button = _button("", Vector2(116, 116), Color.TRANSPARENT, Color.TRANSPARENT)
+	roll_button.position = Vector2(106, 998)
+	_make_button_transparent(roll_button)
 	roll_button.pressed.connect(_roll_dice)
 	screen.add_child(roll_button)
 
@@ -607,6 +616,124 @@ func _build_market_screen() -> Control:
 
 	ui_root.add_child(screen)
 	return screen
+
+
+func _build_play_dice_viewport(screen: Control) -> void:
+	var container := SubViewportContainer.new()
+	container.position = Vector2(78, 950)
+	container.size = Vector2(170, 170)
+	container.stretch = true
+	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	screen.add_child(container)
+
+	play_dice_viewport = SubViewport.new()
+	play_dice_viewport.size = Vector2i(220, 220)
+	play_dice_viewport.transparent_bg = true
+	play_dice_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+	container.add_child(play_dice_viewport)
+
+	var root := Node3D.new()
+	play_dice_viewport.add_child(root)
+
+	var camera_3d := Camera3D.new()
+	camera_3d.look_at_from_position(Vector3(0, 1.6, 4.0), Vector3.ZERO, Vector3.UP)
+	camera_3d.fov = 36
+	root.add_child(camera_3d)
+	camera_3d.current = true
+
+	var light := DirectionalLight3D.new()
+	light.light_energy = 4.5
+	light.rotation_degrees = Vector3(-48, -32, 0)
+	root.add_child(light)
+
+	var glow := OmniLight3D.new()
+	glow.position = Vector3(1.2, 1.1, 2.0)
+	glow.omni_range = 5.0
+	glow.light_energy = 2.2
+	root.add_child(glow)
+
+	play_dice_root = Node3D.new()
+	play_dice_root.name = "GameplayDiceModel"
+	root.add_child(play_dice_root)
+	_rebuild_play_dice_model()
+
+
+func _rebuild_play_dice_model() -> void:
+	if not play_dice_root:
+		return
+	for child in play_dice_root.get_children():
+		child.queue_free()
+
+	var skin: Dictionary = SKINS[selected_skin]
+	var body := MeshInstance3D.new()
+	var mesh := BoxMesh.new()
+	mesh.size = Vector3(1.55, 1.55, 1.55)
+	body.mesh = mesh
+	body.material_override = _make_material(skin["body"], skin["edge"], skin["metallic"], skin["roughness"], 0.42)
+	play_dice_root.add_child(body)
+
+	var shell := MeshInstance3D.new()
+	var shell_mesh := BoxMesh.new()
+	shell_mesh.size = Vector3(1.64, 1.64, 1.64)
+	shell.mesh = shell_mesh
+	var shell_material := StandardMaterial3D.new()
+	shell_material.albedo_color = _with_alpha(skin["accent"], 0.18)
+	shell_material.emission_enabled = true
+	shell_material.emission = skin["accent"]
+	shell_material.emission_energy_multiplier = 0.8
+	shell_material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	shell.material_override = shell_material
+	play_dice_root.add_child(shell)
+
+	play_dice_pip_root = Node3D.new()
+	play_dice_root.add_child(play_dice_pip_root)
+	var pip_material := StandardMaterial3D.new()
+	pip_material.albedo_color = skin["pip"]
+	pip_material.emission_enabled = true
+	pip_material.emission = skin["accent"]
+	pip_material.emission_energy_multiplier = 1.2
+	_add_model_face_pips(play_dice_pip_root, 1, "+z", pip_material, 0.785)
+	_add_model_face_pips(play_dice_pip_root, 6, "-z", pip_material, 0.785)
+	_add_model_face_pips(play_dice_pip_root, 2, "+y", pip_material, 0.785)
+	_add_model_face_pips(play_dice_pip_root, 5, "-y", pip_material, 0.785)
+	_add_model_face_pips(play_dice_pip_root, 3, "+x", pip_material, 0.785)
+	_add_model_face_pips(play_dice_pip_root, 4, "-x", pip_material, 0.785)
+
+
+func _add_model_face_pips(root: Node3D, value: int, face: String, material: StandardMaterial3D, h: float) -> void:
+	for point in FACE_PIPS[value]:
+		var pip := MeshInstance3D.new()
+		var mesh := CylinderMesh.new()
+		mesh.top_radius = 0.075
+		mesh.bottom_radius = 0.075
+		mesh.height = 0.028
+		mesh.radial_segments = 20
+		pip.mesh = mesh
+		pip.material_override = material
+		_set_face_transform_scaled(pip, face, point.x * 0.66, point.y * 0.66, h)
+		root.add_child(pip)
+
+
+func _set_face_transform_scaled(node: Node3D, face: String, a: float, b: float, h: float) -> void:
+	match face:
+		"+z":
+			node.position = Vector3(a, b, h)
+			node.rotation_degrees = Vector3(90, 0, 0)
+		"-z":
+			node.position = Vector3(-a, b, -h)
+			node.rotation_degrees = Vector3(90, 0, 0)
+		"+y":
+			node.position = Vector3(a, h, -b)
+			node.rotation_degrees = Vector3(0, 0, 0)
+		"-y":
+			node.position = Vector3(a, -h, b)
+			node.rotation_degrees = Vector3(180, 0, 0)
+		"+x":
+			node.position = Vector3(h, b, -a)
+			node.rotation_degrees = Vector3(0, 0, 90)
+		"-x":
+			node.position = Vector3(-h, b, a)
+			node.rotation_degrees = Vector3(0, 0, 90)
 
 
 func _add_top_bar(screen: Control, title_text: String, with_tabs: bool) -> void:
@@ -1327,6 +1454,7 @@ func _select_skin(index: int) -> void:
 	under_light.light_color = skin["accent"]
 	ring.material_override = _make_material(skin["accent"], skin["accent"], 0.2, 0.12, 1.8)
 	_rebuild_pips()
+	_rebuild_play_dice_model()
 	_style_dice_button()
 	if roll_button and not rolling:
 		roll_button.text = _dice_face(max(1, roll_result))
@@ -1489,6 +1617,9 @@ func _update_roll(delta: float) -> void:
 			result_label.text = str(roll_result)
 		if roll_button:
 			roll_button.text = _dice_face(roll_result)
+		if play_dice_root:
+			play_dice_root.quaternion = result_rotations[roll_result]
+			play_dice_root.position.y = 0.0
 		if roll_button and current_screen != "play":
 			roll_button.disabled = false
 		_spawn_sparks(54, 1.2 if roll_result == 6 else 0.74)
@@ -1618,6 +1749,18 @@ func _style_dice_button() -> void:
 	roll_button.add_theme_stylebox_override("disabled", normal)
 	roll_button.add_theme_color_override("font_color", _readable_dice_font_color(skin["body"]))
 	roll_button.add_theme_color_override("font_disabled_color", _readable_dice_font_color(skin["body"]))
+
+
+func _make_button_transparent(button: Button) -> void:
+	var style := StyleBoxFlat.new()
+	style.bg_color = Color.TRANSPARENT
+	style.border_color = Color.TRANSPARENT
+	button.add_theme_stylebox_override("normal", style)
+	button.add_theme_stylebox_override("hover", style)
+	button.add_theme_stylebox_override("pressed", style)
+	button.add_theme_stylebox_override("disabled", style)
+	button.add_theme_color_override("font_color", Color.TRANSPARENT)
+	button.add_theme_color_override("font_disabled_color", Color.TRANSPARENT)
 
 
 func _readable_dice_font_color(color: Color) -> Color:
