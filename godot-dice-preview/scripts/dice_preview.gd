@@ -14,6 +14,7 @@ const SKINS := [
 		"metallic": 0.9,
 		"roughness": 0.16,
 		"effect": "lion",
+		"model": "res://assets/dice_models/Dice_Gold.gltf",
 	},
 	{
 		"name": "Inferno Core",
@@ -28,6 +29,7 @@ const SKINS := [
 		"metallic": 0.45,
 		"roughness": 0.28,
 		"effect": "snake",
+		"model": "res://assets/dice_models/Dice_Snake.gltf",
 	},
 	{
 		"name": "Frost Crystal",
@@ -42,6 +44,7 @@ const SKINS := [
 		"metallic": 0.15,
 		"roughness": 0.05,
 		"effect": "eagle",
+		"model": "res://assets/dice_models/Dice_Lion.gltf",
 	},
 	{
 		"name": "Galaxy Void",
@@ -56,6 +59,7 @@ const SKINS := [
 		"metallic": 0.62,
 		"roughness": 0.17,
 		"effect": "eagle",
+		"model": "res://assets/dice_models/Dice_Eagle.gltf",
 	},
 	{
 		"name": "Emerald Royal",
@@ -70,6 +74,7 @@ const SKINS := [
 		"metallic": 0.62,
 		"roughness": 0.14,
 		"effect": "snake",
+		"model": "res://assets/dice_models/Dice_Snake.gltf",
 	},
 ]
 
@@ -665,6 +670,13 @@ func _rebuild_play_dice_model() -> void:
 		child.queue_free()
 
 	var skin: Dictionary = SKINS[selected_skin]
+	var loaded_scene := _load_gltf_dice_scene(String(skin["model"]))
+	if loaded_scene:
+		loaded_scene.name = "LoadedGameplayDice"
+		loaded_scene.scale = Vector3.ONE * 0.82
+		play_dice_root.add_child(loaded_scene)
+		return
+
 	var body := MeshInstance3D.new()
 	var mesh := BoxMesh.new()
 	mesh.size = Vector3(1.55, 1.55, 1.55)
@@ -698,6 +710,18 @@ func _rebuild_play_dice_model() -> void:
 	_add_model_face_pips(play_dice_pip_root, 5, "-y", pip_material, 0.785)
 	_add_model_face_pips(play_dice_pip_root, 3, "+x", pip_material, 0.785)
 	_add_model_face_pips(play_dice_pip_root, 4, "-x", pip_material, 0.785)
+
+
+func _load_gltf_dice_scene(path: String) -> Node3D:
+	var doc := GLTFDocument.new()
+	var state := GLTFState.new()
+	var err := doc.append_from_file(path, state)
+	if err != OK:
+		return null
+	var generated := doc.generate_scene(state)
+	if generated is Node3D:
+		return generated
+	return null
 
 
 func _add_model_face_pips(root: Node3D, value: int, face: String, material: StandardMaterial3D, h: float) -> void:
@@ -1348,7 +1372,7 @@ func _start_new_match() -> void:
 
 func _apply_screen_camera() -> void:
 	if current_screen == "play":
-		dice_root.visible = true
+		dice_root.visible = false
 		dice_root.position.x = -3.55
 		dice_root.position.z = 0.25
 		dice_root.scale = Vector3.ONE * 0.68

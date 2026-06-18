@@ -26,7 +26,22 @@ These sources were reviewed for dice and cinematic companion assets.
 
 ## Current implementation
 
-The game currently uses procedural Godot 3D effects for premium dice results:
+The game now includes real generated glTF dice assets under:
+
+```text
+assets/dice_models/
+```
+
+Included files:
+
+- `Dice_Gold.gltf`
+- `Dice_Snake.gltf`
+- `Dice_Lion.gltf`
+- `Dice_Eagle.gltf`
+
+Each file has its own mesh/material layout and matching `.bin` buffer.
+
+The game also uses procedural Godot 3D effects for premium dice results:
 
 - Snake effect for selected skins with `effect = "snake"`.
 - Lion/mane effect for selected skins with `effect = "lion"`.
