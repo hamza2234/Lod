@@ -143,6 +143,8 @@ var status_label: Label
 var turn_label: Label
 var timer_label: Label
 var timer_ring: TextureProgressBar
+var turn_timer: Timer
+var timer_dots: Array[Panel] = []
 var demo_piece: Label
 var board_holder: Control
 var player_chips: Array[Control] = []
@@ -555,6 +557,12 @@ func _build_play_screen() -> Control:
 	timer_ring.tint_progress = Color("#7dffbc")
 	timer_ring.tint_under = _with_alpha(Color.WHITE, 0.12)
 	bottom_bar.add_child(timer_ring)
+	_build_timer_dots(bottom_bar)
+
+	turn_timer = Timer.new()
+	turn_timer.one_shot = true
+	turn_timer.timeout.connect(_on_turn_timer_timeout)
+	screen.add_child(turn_timer)
 
 	var market_tab := _button("السوق", Vector2(96, 44), Color("#2bc4ff"), Color.WHITE)
 	market_tab.position = Vector2(440, 17)
@@ -709,6 +717,40 @@ func _build_play_dice_viewport(screen: Control) -> void:
 	play_dice_root.name = "GameplayDiceModel"
 	play_dice_body.add_child(play_dice_root)
 	_rebuild_play_dice_model()
+
+
+func _build_timer_dots(parent: Control) -> void:
+	timer_dots.clear()
+	var center := Vector2(270, 38)
+	var radius := 34.0
+	for i in range(12):
+		var dot := _panel(Vector2(7, 7), Vector2.ZERO, Color("#7dffbc"), 8)
+		var angle := -PI / 2.0 + TAU * float(i) / 12.0
+		dot.position = center + Vector2(cos(angle), sin(angle)) * radius - Vector2(3.5, 3.5)
+		parent.add_child(dot)
+		timer_dots.append(dot)
+	_update_timer_dots(HUMAN_TURN_SECONDS, HUMAN_TURN_SECONDS)
+
+
+func _update_timer_dots(remaining: float, total: float) -> void:
+	if timer_dots.is_empty():
+		return
+	var ratio := 0.0 if total <= 0.0 else clampf(remaining / total, 0.0, 1.0)
+	var active := int(ceil(ratio * float(timer_dots.size())))
+	var color := Color("#7dffbc")
+	if ratio < 0.35:
+		color = Color("#ff5f5f")
+	elif ratio < 0.65:
+		color = Color("#ffd45f")
+	for i in range(timer_dots.size()):
+		timer_dots[i].modulate = Color.WHITE if i < active else _with_alpha(Color.WHITE, 0.18)
+		var style := StyleBoxFlat.new()
+		style.bg_color = color if i < active else _with_alpha(Color.WHITE, 0.1)
+		style.corner_radius_top_left = 8
+		style.corner_radius_top_right = 8
+		style.corner_radius_bottom_left = 8
+		style.corner_radius_bottom_right = 8
+		timer_dots[i].add_theme_stylebox_override("panel", style)
 
 
 func _add_dice_face_raycasts(parent: Node3D) -> void:
@@ -1241,19 +1283,27 @@ func _dice_viewport_position_for_player(player: int) -> Vector2:
 func _start_human_timer(seconds: float) -> void:
 	turn_deadline = Time.get_ticks_msec() / 1000.0 + seconds
 	turn_timer_active = true
+	if turn_timer:
+		turn_timer.stop()
+		turn_timer.wait_time = seconds
+		turn_timer.start()
 	if timer_label:
 		timer_label.text = str(int(ceil(seconds)))
 	if timer_ring:
 		timer_ring.max_value = seconds
 		timer_ring.value = seconds
+	_update_timer_dots(seconds, seconds)
 
 
 func _stop_turn_timer() -> void:
 	turn_timer_active = false
+	if turn_timer:
+		turn_timer.stop()
 	if timer_label:
 		timer_label.text = "--"
 	if timer_ring:
 		timer_ring.value = 0
+	_update_timer_dots(0.0, HUMAN_TURN_SECONDS)
 
 
 func _update_turn_timer() -> void:
@@ -1264,7 +1314,20 @@ func _update_turn_timer() -> void:
 		timer_label.text = str(int(ceil(remaining)))
 	if timer_ring:
 		timer_ring.value = remaining
+	_update_timer_dots(remaining, turn_timer.wait_time if turn_timer else HUMAN_TURN_SECONDS)
 	if remaining > 0.0:
+		return
+	_handle_human_timeout()
+
+
+func _on_turn_timer_timeout() -> void:
+	if not turn_timer_active:
+		return
+	_handle_human_timeout()
+
+
+func _handle_human_timeout() -> void:
+	if not turn_timer_active:
 		return
 	turn_timer_active = false
 	if awaiting_piece_choice:
@@ -1709,7 +1772,7 @@ func _roll_dice() -> void:
 		_stop_turn_timer()
 	rolling = true
 	roll_time = 0.0
-	roll_result = randi_range(1, 6)
+	roll_result = _request_dice_roll()
 	roll_seed = Vector3(randf() * PI, randf() * PI, randf() * PI)
 	roll_spin = Vector3(randf_range(15, 22), randf_range(18, 27), randf_range(13, 21)) * PI
 	blend_started = false
@@ -1722,6 +1785,12 @@ func _roll_dice() -> void:
 		_make_button_transparent(roll_button)
 		roll_button.disabled = true
 	_spawn_sparks(42, 0.82)
+
+
+func _request_dice_roll() -> int:
+	# Backend integration point: replace this function with a signed server
+	# response to make competitive dice results authoritative.
+	return randi_range(1, 6)
 
 
 func _start_play_dice_physics_roll() -> void:
