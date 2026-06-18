@@ -78,15 +78,15 @@ const FACE_PIPS := {
 }
 
 const BOARD_CELL := 30.0
-const MAIN_PATH_LENGTH := 44
-const HOME_ENTRY_PROGRESS := 44
-const FINISH_PROGRESS := 50
+const MAIN_PATH_LENGTH := 52
+const HOME_ENTRY_PROGRESS := 52
+const FINISH_PROGRESS := 58
 
 const PLAYER_NAMES := ["أنت", "عليوش CPU", "Biso CPU", "زهور CPU"]
 const PLAYER_SYMBOLS := ["●", "◆", "●", "▲"]
 const PLAYER_COLORS := [Color("#91eaff"), Color("#ffc1ef"), Color("#95ff7d"), Color("#ffe15b")]
-const PLAYER_START_OFFSETS := [0, 11, 22, 33]
-const SAFE_GLOBAL_INDICES := [0, 8, 11, 19, 22, 30, 33, 41]
+const PLAYER_START_OFFSETS := [0, 13, 26, 39]
+const SAFE_GLOBAL_INDICES := [0, 8, 13, 21, 26, 34, 39, 47]
 
 var result_rotations := {}
 var selected_skin := 0
@@ -495,6 +495,11 @@ func _build_play_screen() -> Control:
 	market_tab.pressed.connect(_show_screen.bind("market"))
 	bottom_bar.add_child(market_tab)
 
+	var restart := _button("جديدة", Vector2(96, 42), Color("#3a456a"), Color.WHITE)
+	restart.position = Vector2(312, 790)
+	restart.pressed.connect(_start_new_match)
+	screen.add_child(restart)
+
 	ui_root.add_child(screen)
 	return screen
 
@@ -654,12 +659,14 @@ func _ludo_cell_color(x: int, y: int) -> Color:
 
 func _is_safe_cell(x: int, y: int) -> bool:
 	return Vector2i(x, y) in [
-		Vector2i(2, 8),
-		Vector2i(6, 2),
-		Vector2i(8, 12),
-		Vector2i(12, 6),
 		Vector2i(1, 6),
+		Vector2i(6, 2),
+		Vector2i(8, 1),
+		Vector2i(12, 6),
+		Vector2i(13, 8),
+		Vector2i(8, 12),
 		Vector2i(6, 13),
+		Vector2i(2, 8),
 	]
 
 
@@ -798,13 +805,15 @@ func _board_path_position(index: int) -> Vector2:
 	var path: Array[Vector2] = [
 		Vector2(1, 6), Vector2(2, 6), Vector2(3, 6), Vector2(4, 6), Vector2(5, 6),
 		Vector2(6, 5), Vector2(6, 4), Vector2(6, 3), Vector2(6, 2), Vector2(6, 1),
-		Vector2(7, 1), Vector2(8, 1), Vector2(8, 2), Vector2(8, 3), Vector2(8, 4),
-		Vector2(8, 5), Vector2(9, 6), Vector2(10, 6), Vector2(11, 6), Vector2(12, 6),
-		Vector2(13, 6), Vector2(13, 7), Vector2(13, 8), Vector2(12, 8), Vector2(11, 8),
-		Vector2(10, 8), Vector2(9, 8), Vector2(8, 9), Vector2(8, 10), Vector2(8, 11),
-		Vector2(8, 12), Vector2(8, 13), Vector2(7, 13), Vector2(6, 13), Vector2(6, 12),
-		Vector2(6, 11), Vector2(6, 10), Vector2(6, 9), Vector2(5, 8), Vector2(4, 8),
-		Vector2(3, 8), Vector2(2, 8), Vector2(1, 8), Vector2(1, 7),
+		Vector2(6, 0), Vector2(7, 0), Vector2(8, 0), Vector2(8, 1), Vector2(8, 2),
+		Vector2(8, 3), Vector2(8, 4), Vector2(8, 5), Vector2(9, 6), Vector2(10, 6),
+		Vector2(11, 6), Vector2(12, 6), Vector2(13, 6), Vector2(14, 6), Vector2(14, 7),
+		Vector2(14, 8), Vector2(13, 8), Vector2(12, 8), Vector2(11, 8), Vector2(10, 8),
+		Vector2(9, 8), Vector2(8, 9), Vector2(8, 10), Vector2(8, 11), Vector2(8, 12),
+		Vector2(8, 13), Vector2(8, 14), Vector2(7, 14), Vector2(6, 14), Vector2(6, 13),
+		Vector2(6, 12), Vector2(6, 11), Vector2(6, 10), Vector2(6, 9), Vector2(5, 8),
+		Vector2(4, 8), Vector2(3, 8), Vector2(2, 8), Vector2(1, 8), Vector2(0, 8),
+		Vector2(0, 7), Vector2(0, 6),
 	]
 	var cell: Vector2 = path[index % path.size()]
 	return cell * BOARD_CELL + Vector2(0, -2)
