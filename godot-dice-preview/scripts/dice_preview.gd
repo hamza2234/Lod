@@ -3,9 +3,10 @@ extends Node3D
 const SKINS := [
 	{
 		"name": "Royal Gold",
-		"label": "ذهب ملكي",
+		"arabic": "الذهبي الملكي",
 		"rarity": "Legendary",
-		"description": "نرد ذهبي ملكي بحواف لامعة ونقاط مضيئة.",
+		"price": 500,
+		"description": "نرد ذهبي فخم بحواف لامعة ونقاط مضيئة.",
 		"body": Color("#f6c75f"),
 		"edge": Color("#8b4b13"),
 		"pip": Color("#fff6c3"),
@@ -15,8 +16,9 @@ const SKINS := [
 	},
 	{
 		"name": "Inferno Core",
-		"label": "نار وبركان",
+		"arabic": "قلب النار",
 		"rarity": "Epic",
+		"price": 900,
 		"description": "نرد داكن بقلب ناري وشرارات حمراء أثناء الرمي.",
 		"body": Color("#1b0b0a"),
 		"edge": Color("#ff4b1f"),
@@ -27,8 +29,9 @@ const SKINS := [
 	},
 	{
 		"name": "Frost Crystal",
-		"label": "كريستال جليدي",
+		"arabic": "كريستال الجليد",
 		"rarity": "Rare",
+		"price": 700,
 		"description": "نرد زجاجي بارد بنقاط بيضاء وضباب خفيف.",
 		"body": Color("#8adcf7"),
 		"edge": Color("#defbff"),
@@ -39,8 +42,9 @@ const SKINS := [
 	},
 	{
 		"name": "Galaxy Void",
-		"label": "مجرة بنفسجية",
+		"arabic": "فراغ المجرة",
 		"rarity": "Mythic",
+		"price": 1500,
 		"description": "نرد فضائي داكن مع نجوم صغيرة وهالة بنفسجية.",
 		"body": Color("#16122d"),
 		"edge": Color("#7f5cff"),
@@ -51,8 +55,9 @@ const SKINS := [
 	},
 	{
 		"name": "Emerald Royal",
-		"label": "زمرد فاخر",
+		"arabic": "الزمرد الملكي",
 		"rarity": "Epic",
+		"price": 1100,
 		"description": "نرد زمردي لامع بنقاط ذهبية مناسب للبطولات.",
 		"body": Color("#0fa66f"),
 		"edge": Color("#b7ffbd"),
@@ -72,22 +77,34 @@ const FACE_PIPS := {
 	6: [Vector2(-0.42, -0.48), Vector2(-0.42, 0.0), Vector2(-0.42, 0.48), Vector2(0.42, -0.48), Vector2(0.42, 0.0), Vector2(0.42, 0.48)],
 }
 
+const BOARD_CELL := 30.0
+
 var result_rotations := {}
 var selected_skin := 0
+var equipped_skin := 0
+var current_screen := "login"
+var demo_piece_index := 0
+var bet_amount := 500
+
+var camera: Camera3D
 var dice_root: Node3D
 var dice_body: MeshInstance3D
 var pip_root: Node3D
+var ring: MeshInstance3D
 var accent_light: OmniLight3D
 var under_light: OmniLight3D
-var ring: MeshInstance3D
-var camera: Camera3D
-var result_label: Label
-var name_label: Label
-var rarity_label: Label
-var description_label: Label
-var roll_button: Button
-var skin_buttons: Array[Button] = []
 var sparks: Array[MeshInstance3D] = []
+
+var ui_root: Control
+var screens := {}
+var result_label: Label
+var dice_name_label: Label
+var dice_description_label: Label
+var market_cards: Array[Button] = []
+var roll_button: Button
+var bet_label: Label
+var demo_piece: Label
+var board_holder: Control
 
 var rolling := false
 var roll_time := 0.0
@@ -106,22 +123,21 @@ func _ready() -> void:
 	_build_world()
 	_build_ui()
 	_select_skin(0)
+	_show_screen("login")
 	dice_root.quaternion = result_rotations[1]
 
 
 func _process(delta: float) -> void:
 	var time := Time.get_ticks_msec() / 1000.0
-	ring.rotation.y += delta * 0.45
-	accent_light.light_energy = 4.3 + sin(time * 2.5) * 0.8
-	under_light.light_energy = 2.4 + sin(time * 3.8) * 0.65
-	camera.position.x = sin(time * 0.25) * 0.22
-	camera.position.y = 3.15 + sin(time * 0.18) * 0.08
-	camera.look_at(Vector3(0, 0.15, 0), Vector3.UP)
+	ring.rotation.y += delta * 0.48
+	accent_light.light_energy = 4.2 + sin(time * 2.5) * 0.9
+	under_light.light_energy = 2.3 + sin(time * 3.7) * 0.65
+	_update_camera(time)
 
 	if rolling:
 		_update_roll(delta)
 	else:
-		dice_root.position.y = 0.28 + sin(time * 1.35) * 0.045
+		dice_root.position.y = 0.32 + sin(time * 1.35) * 0.045
 		dice_root.rotate_y(delta * 0.22)
 
 	_update_sparks(delta)
@@ -147,19 +163,19 @@ func _build_world() -> void:
 	var world := WorldEnvironment.new()
 	var environment := Environment.new()
 	environment.background_mode = Environment.BG_COLOR
-	environment.background_color = Color("#070913")
+	environment.background_color = Color("#090725")
 	environment.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	environment.ambient_light_color = Color("#a8bbff")
-	environment.ambient_light_energy = 0.38
+	environment.ambient_light_color = Color("#90b4ff")
+	environment.ambient_light_energy = 0.42
 	environment.glow_enabled = true
 	environment.glow_intensity = 0.38
-	environment.glow_strength = 0.88
+	environment.glow_strength = 0.9
 	world.environment = environment
 	add_child(world)
 
 	camera = Camera3D.new()
 	camera.fov = 42.0
-	camera.position = Vector3(0, 3.2, 7.0)
+	camera.position = Vector3(0, 3.25, 7.4)
 	add_child(camera)
 	camera.current = true
 
@@ -170,7 +186,7 @@ func _build_world() -> void:
 	add_child(key_light)
 
 	accent_light = OmniLight3D.new()
-	accent_light.position = Vector3(3.1, 2.6, 2.7)
+	accent_light.position = Vector3(3.2, 2.7, 2.8)
 	accent_light.omni_range = 9.0
 	add_child(accent_light)
 
@@ -187,7 +203,7 @@ func _build_world() -> void:
 	floor_mesh.radial_segments = 128
 	floor.mesh = floor_mesh
 	floor.position.y = -1.08
-	floor.material_override = _make_material(Color("#111827"), Color("#1b2440"), 0.3, 0.34)
+	floor.material_override = _make_material(Color("#10162b"), Color("#273255"), 0.3, 0.34)
 	add_child(floor)
 
 	var pedestal := MeshInstance3D.new()
@@ -212,8 +228,8 @@ func _build_world() -> void:
 	add_child(ring)
 
 	dice_root = Node3D.new()
-	dice_root.name = "LuxuryDice"
-	dice_root.position.y = 0.28
+	dice_root.name = "EngineDice"
+	dice_root.position.y = 0.32
 	add_child(dice_root)
 
 	dice_body = MeshInstance3D.new()
@@ -224,7 +240,7 @@ func _build_world() -> void:
 
 	var glow_shell := MeshInstance3D.new()
 	var glow_mesh := BoxMesh.new()
-	glow_mesh.size = Vector3(2.06, 2.06, 2.06)
+	glow_mesh.size = Vector3(2.08, 2.08, 2.08)
 	glow_shell.mesh = glow_mesh
 	glow_shell.name = "SoftOuterGlow"
 	dice_root.add_child(glow_shell)
@@ -248,87 +264,469 @@ func _build_ui() -> void:
 	var layer := CanvasLayer.new()
 	add_child(layer)
 
-	var root := Control.new()
-	root.set_anchors_preset(Control.PRESET_FULL_RECT)
-	layer.add_child(root)
+	ui_root = Control.new()
+	ui_root.set_anchors_preset(Control.PRESET_FULL_RECT)
+	layer.add_child(ui_root)
 
-	var left := VBoxContainer.new()
-	left.position = Vector2(26, 24)
-	left.custom_minimum_size = Vector2(360, 0)
-	root.add_child(left)
+	screens["login"] = _build_login_screen()
+	screens["lobby"] = _build_lobby_screen()
+	screens["mode"] = _build_mode_screen()
+	screens["play"] = _build_play_screen()
+	screens["market"] = _build_market_screen()
 
-	var title := Label.new()
-	title.text = "Godot Engine Dice Preview"
-	title.add_theme_font_size_override("font_size", 28)
-	left.add_child(title)
 
-	name_label = Label.new()
-	name_label.add_theme_font_size_override("font_size", 36)
-	left.add_child(name_label)
+func _build_login_screen() -> Control:
+	var screen := _screen_base("login", Color("#171338"), Color("#0a7ca0"))
+	var card := _panel(Vector2(380, 430), Vector2(170, 210), Color("#162a51"), 18)
+	screen.add_child(card)
 
-	description_label = Label.new()
-	description_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	description_label.custom_minimum_size = Vector2(360, 0)
-	left.add_child(description_label)
+	var title := _label("Ludo Nova", 44, Color("#ffe67b"), HORIZONTAL_ALIGNMENT_CENTER)
+	title.position = Vector2(25, 26)
+	title.size = Vector2(330, 58)
+	card.add_child(title)
 
-	var market_title := Label.new()
-	market_title.text = "سوق النرد"
-	market_title.add_theme_font_size_override("font_size", 22)
-	left.add_child(market_title)
+	var subtitle := _label("تطبيق Kotlin يشغل محرك Godot - كل الواجهات هنا داخل المحرك", 16, Color("#d8ecff"), HORIZONTAL_ALIGNMENT_CENTER)
+	subtitle.position = Vector2(28, 88)
+	subtitle.size = Vector2(324, 48)
+	subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	card.add_child(subtitle)
 
-	for i in range(SKINS.size()):
-		var button := Button.new()
-		button.text = "%s - %s" % [SKINS[i]["name"], SKINS[i]["label"]]
-		button.custom_minimum_size = Vector2(340, 42)
-		button.pressed.connect(_select_skin.bind(i))
-		skin_buttons.append(button)
-		left.add_child(button)
+	var name_box := LineEdit.new()
+	name_box.placeholder_text = "اسم اللاعب"
+	name_box.text = "Biso Nova"
+	name_box.position = Vector2(42, 158)
+	name_box.size = Vector2(296, 48)
+	card.add_child(name_box)
 
-	var bottom := HBoxContainer.new()
-	bottom.anchor_left = 0.5
-	bottom.anchor_top = 1.0
-	bottom.anchor_right = 0.5
-	bottom.anchor_bottom = 1.0
-	bottom.offset_left = -230
-	bottom.offset_right = 230
-	bottom.offset_top = -88
-	bottom.offset_bottom = -24
-	bottom.alignment = BoxContainer.ALIGNMENT_CENTER
-	bottom.add_theme_constant_override("separation", 18)
-	root.add_child(bottom)
+	var pass_box := LineEdit.new()
+	pass_box.placeholder_text = "كلمة المرور"
+	pass_box.secret = true
+	pass_box.position = Vector2(42, 220)
+	pass_box.size = Vector2(296, 48)
+	card.add_child(pass_box)
 
-	result_label = Label.new()
-	result_label.text = "جاهز"
-	result_label.add_theme_font_size_override("font_size", 38)
-	bottom.add_child(result_label)
+	var login_button := _button("دخول اللوبي", Vector2(260, 56), Color("#ffd233"), Color("#422400"))
+	login_button.position = Vector2(60, 300)
+	login_button.pressed.connect(_show_screen.bind("lobby"))
+	card.add_child(login_button)
 
-	roll_button = Button.new()
-	roll_button.text = "ارم النرد"
-	roll_button.custom_minimum_size = Vector2(160, 56)
+	var guest_button := _button("الدخول كزائر", Vector2(220, 44), Color("#28a8ff"), Color.WHITE)
+	guest_button.position = Vector2(80, 368)
+	guest_button.pressed.connect(_show_screen.bind("lobby"))
+	card.add_child(guest_button)
+
+	ui_root.add_child(screen)
+	return screen
+
+
+func _build_lobby_screen() -> Control:
+	var screen := _screen_base("lobby", Color("#251640"), Color("#083a5a"))
+	_add_top_bar(screen, "اللوبي", true)
+
+	var left_card := _player_card("زهور", "VIP", Color("#22c4ff"), Vector2(34, 150))
+	screen.add_child(left_card)
+	var right_card := _player_card("عليوش", "Gold", Color("#ffcf40"), Vector2(356, 150))
+	screen.add_child(right_card)
+
+	var center := _panel(Vector2(500, 410), Vector2(110, 390), Color("#10264a"), 18)
+	screen.add_child(center)
+
+	var title := _label("اختر تجربتك", 38, Color("#fff2a6"), HORIZONTAL_ALIGNMENT_CENTER)
+	title.position = Vector2(30, 24)
+	title.size = Vector2(440, 58)
+	center.add_child(title)
+
+	var play_button := _button("ابدأ اللعب", Vector2(340, 66), Color("#ffd21f"), Color("#3d2600"))
+	play_button.position = Vector2(80, 114)
+	play_button.pressed.connect(_show_screen.bind("mode"))
+	center.add_child(play_button)
+
+	var market_button := _button("سوق النرد داخل المحرك", Vector2(340, 58), Color("#2bc4ff"), Color.WHITE)
+	market_button.position = Vector2(80, 198)
+	market_button.pressed.connect(_show_screen.bind("market"))
+	center.add_child(market_button)
+
+	var preview_hint := _label("النرد 3D الموجود أمامك من Godot. اضغط عليه للرمي في أي شاشة.", 17, Color("#cfeaff"), HORIZONTAL_ALIGNMENT_CENTER)
+	preview_hint.position = Vector2(50, 285)
+	preview_hint.size = Vector2(400, 76)
+	preview_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	center.add_child(preview_hint)
+
+	ui_root.add_child(screen)
+	return screen
+
+
+func _build_mode_screen() -> Control:
+	var screen := _screen_base("mode", Color("#191c58"), Color("#00a6aa"))
+	_add_top_bar(screen, "غرفة اللعب", true)
+
+	var content := _panel(Vector2(560, 560), Vector2(80, 170), Color("#123d65"), 16)
+	screen.add_child(content)
+
+	var moon := _label("☾", 132, _with_alpha(Color("#e7edff"), 0.35), HORIZONTAL_ALIGNMENT_CENTER)
+	moon.position = Vector2(214, -30)
+	moon.size = Vector2(132, 150)
+	content.add_child(moon)
+
+	var players_4 := _button("4 لاعبين", Vector2(190, 96), Color("#36a8ff"), Color.WHITE)
+	players_4.position = Vector2(78, 54)
+	content.add_child(players_4)
+
+	var players_2 := _button("1 مقابل 1", Vector2(190, 96), Color("#27c7ff"), Color.WHITE)
+	players_2.position = Vector2(292, 54)
+	content.add_child(players_2)
+
+	var mode_label := _label("حدد النمط", 26, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	mode_label.position = Vector2(160, 180)
+	mode_label.size = Vector2(240, 42)
+	content.add_child(mode_label)
+
+	var classic := _button("الكلاسيكي ✓", Vector2(220, 50), Color("#21b9f2"), Color("#fffbc7"))
+	classic.position = Vector2(52, 238)
+	content.add_child(classic)
+
+	var arrow := _button("السهم Hot", Vector2(220, 50), Color("#2498d2"), Color("#d6f0ff"))
+	arrow.position = Vector2(288, 238)
+	content.add_child(arrow)
+
+	var master := _button("الماستر", Vector2(220, 50), Color("#2288c5"), Color("#b9d6e9"))
+	master.position = Vector2(52, 302)
+	content.add_child(master)
+
+	var fast := _button("السريع", Vector2(220, 50), Color("#2288c5"), Color("#b9d6e9"))
+	fast.position = Vector2(288, 302)
+	content.add_child(fast)
+
+	var magic := _button("أدوات سحرية 🎲", Vector2(456, 72), Color("#114b70"), Color.WHITE)
+	magic.position = Vector2(52, 382)
+	magic.pressed.connect(_show_screen.bind("market"))
+	content.add_child(magic)
+
+	var minus := _button("-", Vector2(58, 58), Color("#7f91a3"), Color.WHITE)
+	minus.position = Vector2(64, 474)
+	minus.pressed.connect(_change_bet.bind(-100))
+	content.add_child(minus)
+
+	bet_label = _label(str(bet_amount) + " 🪙", 30, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	bet_label.position = Vector2(152, 482)
+	bet_label.size = Vector2(256, 44)
+	content.add_child(bet_label)
+
+	var plus := _button("+", Vector2(58, 58), Color("#ffcf33"), Color("#402000"))
+	plus.position = Vector2(438, 474)
+	plus.pressed.connect(_change_bet.bind(100))
+	content.add_child(plus)
+
+	var start := _button("ابدأ!", Vector2(300, 62), Color("#ffdb22"), Color("#412500"))
+	start.position = Vector2(210, 1020)
+	start.pressed.connect(_show_screen.bind("play"))
+	screen.add_child(start)
+
+	ui_root.add_child(screen)
+	return screen
+
+
+func _build_play_screen() -> Control:
+	var screen := _screen_base("play", Color("#281738"), Color("#0a0d26"))
+	_add_top_bar(screen, "اللعبة", true)
+
+	screen.add_child(_player_chip("زهور", Color("#28b6ff"), Vector2(40, 130)))
+	screen.add_child(_player_chip("عليوش", Color("#ffcf40"), Vector2(410, 130)))
+	screen.add_child(_player_chip("Biso Nova", Color("#f3d9ff"), Vector2(410, 820)))
+	screen.add_child(_player_chip("Guest", Color("#ffd24d"), Vector2(60, 820)))
+
+	board_holder = Control.new()
+	board_holder.position = Vector2(135, 300)
+	board_holder.size = Vector2(BOARD_CELL * 15.0, BOARD_CELL * 15.0)
+	screen.add_child(board_holder)
+	_build_ludo_board(board_holder)
+
+	var bottom_bar := _panel(Vector2(360, 88), Vector2(180, 940), Color("#15182c"), 18)
+	screen.add_child(bottom_bar)
+
+	roll_button = _button("ارم النرد", Vector2(138, 58), Color("#ffce2f"), Color("#402400"))
+	roll_button.position = Vector2(26, 15)
 	roll_button.pressed.connect(_roll_dice)
-	bottom.add_child(roll_button)
+	bottom_bar.add_child(roll_button)
 
-	rarity_label = Label.new()
-	rarity_label.anchor_left = 1.0
-	rarity_label.anchor_right = 1.0
-	rarity_label.offset_left = -220
-	rarity_label.offset_right = -24
-	rarity_label.offset_top = 26
-	rarity_label.offset_bottom = 68
-	rarity_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	rarity_label.add_theme_font_size_override("font_size", 22)
-	root.add_child(rarity_label)
+	result_label = _label("جاهز", 34, Color("#fff4aa"), HORIZONTAL_ALIGNMENT_CENTER)
+	result_label.position = Vector2(176, 20)
+	result_label.size = Vector2(96, 48)
+	bottom_bar.add_child(result_label)
+
+	var market_tab := _button("السوق", Vector2(76, 44), Color("#2bc4ff"), Color.WHITE)
+	market_tab.position = Vector2(274, 22)
+	market_tab.pressed.connect(_show_screen.bind("market"))
+	bottom_bar.add_child(market_tab)
+
+	ui_root.add_child(screen)
+	return screen
+
+
+func _build_market_screen() -> Control:
+	var screen := _screen_base("market", Color("#11172d"), Color("#1a0642"))
+	_add_top_bar(screen, "سوق النرد", true)
+
+	var info := _panel(Vector2(640, 170), Vector2(40, 120), Color("#162a51"), 16)
+	screen.add_child(info)
+
+	dice_name_label = _label("", 32, Color("#ffe879"), HORIZONTAL_ALIGNMENT_CENTER)
+	dice_name_label.position = Vector2(20, 20)
+	dice_name_label.size = Vector2(600, 42)
+	info.add_child(dice_name_label)
+
+	dice_description_label = _label("", 17, Color("#dff5ff"), HORIZONTAL_ALIGNMENT_CENTER)
+	dice_description_label.position = Vector2(24, 72)
+	dice_description_label.size = Vector2(592, 72)
+	dice_description_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	info.add_child(dice_description_label)
+
+	var title := _label("كل نرد هنا مصنوع ويظهر من محرك Godot", 25, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	title.position = Vector2(60, 316)
+	title.size = Vector2(600, 42)
+	screen.add_child(title)
+
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.position = Vector2(96, 390)
+	grid.size = Vector2(520, 300)
+	grid.add_theme_constant_override("h_separation", 14)
+	grid.add_theme_constant_override("v_separation", 14)
+	screen.add_child(grid)
+
+	market_cards.clear()
+	for i in range(SKINS.size()):
+		var skin: Dictionary = SKINS[i]
+		var card := _button("%s\n%s • %s 🪙" % [skin["arabic"], skin["rarity"], skin["price"]], Vector2(250, 88), skin["body"], Color.WHITE)
+		card.pressed.connect(_select_skin.bind(i))
+		market_cards.append(card)
+		grid.add_child(card)
+
+	var equip := _button("تجهيز النرد المختار", Vector2(250, 60), Color("#ffd429"), Color("#3d2600"))
+	equip.position = Vector2(94, 950)
+	equip.pressed.connect(_equip_selected_skin)
+	screen.add_child(equip)
+
+	var roll := _button("جرب الرمي", Vector2(180, 54), Color("#2bc4ff"), Color.WHITE)
+	roll.position = Vector2(388, 954)
+	roll.pressed.connect(_roll_dice)
+	screen.add_child(roll)
+
+	ui_root.add_child(screen)
+	return screen
+
+
+func _add_top_bar(screen: Control, title_text: String, with_tabs: bool) -> void:
+	var bar := _panel(Vector2(672, 70), Vector2(24, 18), Color("#201a38"), 18)
+	screen.add_child(bar)
+
+	var title := _label(title_text, 28, Color("#fff2b5"), HORIZONTAL_ALIGNMENT_CENTER)
+	title.position = Vector2(312, 14)
+	title.size = Vector2(120, 42)
+	bar.add_child(title)
+
+	var coins := _label("0 مشاهد 👁    2,400 🪙", 18, Color("#e8f5ff"), HORIZONTAL_ALIGNMENT_CENTER)
+	coins.position = Vector2(420, 18)
+	coins.size = Vector2(140, 34)
+	bar.add_child(coins)
+
+	if with_tabs:
+		var lobby := _button("لوبي", Vector2(88, 42), Color("#2b3558"), Color.WHITE)
+		lobby.position = Vector2(20, 14)
+		lobby.pressed.connect(_show_screen.bind("lobby"))
+		bar.add_child(lobby)
+
+		var play := _button("لعب", Vector2(88, 42), Color("#2b3558"), Color.WHITE)
+		play.position = Vector2(116, 14)
+		play.pressed.connect(_show_screen.bind("play"))
+		bar.add_child(play)
+
+		var market := _button("سوق", Vector2(88, 42), Color("#2b3558"), Color.WHITE)
+		market.position = Vector2(212, 14)
+		market.pressed.connect(_show_screen.bind("market"))
+		bar.add_child(market)
+
+		var settings := _label("⚙  🏆", 30, Color("#dfe8ff"), HORIZONTAL_ALIGNMENT_CENTER)
+		settings.position = Vector2(570, 13)
+		settings.size = Vector2(110, 44)
+		bar.add_child(settings)
+
+
+func _build_ludo_board(parent: Control) -> void:
+	var frame := _panel(Vector2(BOARD_CELL * 15.0 + 18.0, BOARD_CELL * 15.0 + 18.0), Vector2(-9, -9), Color("#8a4f2b"), 16)
+	parent.add_child(frame)
+
+	var grid := GridContainer.new()
+	grid.columns = 15
+	grid.position = Vector2.ZERO
+	grid.size = Vector2(BOARD_CELL * 15.0, BOARD_CELL * 15.0)
+	parent.add_child(grid)
+
+	for y in range(15):
+		for x in range(15):
+			var cell := ColorRect.new()
+			cell.custom_minimum_size = Vector2(BOARD_CELL, BOARD_CELL)
+			cell.color = _ludo_cell_color(x, y)
+			grid.add_child(cell)
+			if _is_safe_cell(x, y):
+				var star := _label("★", 19, Color("#717171"), HORIZONTAL_ALIGNMENT_CENTER)
+				star.size = Vector2(BOARD_CELL, BOARD_CELL)
+				cell.add_child(star)
+
+	_add_home_tokens(parent, Vector2(1.1, 1.2), Color("#92edff"), "●")
+	_add_home_tokens(parent, Vector2(10.2, 1.2), Color("#ffd2f4"), "◆")
+	_add_home_tokens(parent, Vector2(1.1, 10.2), Color("#ffe05c"), "▲")
+	_add_home_tokens(parent, Vector2(10.2, 10.2), Color("#9cff80"), "●")
+
+	demo_piece = _label("●", 27, Color("#fff8c6"), HORIZONTAL_ALIGNMENT_CENTER)
+	demo_piece.add_theme_color_override("font_shadow_color", Color("#9d5400"))
+	demo_piece.add_theme_constant_override("shadow_offset_x", 2)
+	demo_piece.add_theme_constant_override("shadow_offset_y", 2)
+	demo_piece.size = Vector2(BOARD_CELL, BOARD_CELL)
+	demo_piece.position = _board_path_position(0)
+	parent.add_child(demo_piece)
+
+
+func _ludo_cell_color(x: int, y: int) -> Color:
+	if x < 6 and y < 6:
+		return Color("#1c9dff")
+	if x > 8 and y < 6:
+		return Color("#f33a2f")
+	if x < 6 and y > 8:
+		return Color("#ffd21c")
+	if x > 8 and y > 8:
+		return Color("#24bf45")
+	if x >= 6 and x <= 8 and y >= 6 and y <= 8:
+		if x == 7 and y == 7:
+			return Color("#ffce2e")
+		if x < 7:
+			return Color("#299dff")
+		if x > 7:
+			return Color("#21c24c")
+		if y < 7:
+			return Color("#f43a32")
+		return Color("#ffd21c")
+	if x >= 6 and x <= 8:
+		if x == 7 and y > 0 and y < 6:
+			return Color("#f43a32")
+		if x == 7 and y > 8 and y < 14:
+			return Color("#ffd21c")
+		return Color("#f7f7f7")
+	if y >= 6 and y <= 8:
+		if y == 7 and x > 0 and x < 6:
+			return Color("#1b95f2")
+		if y == 7 and x > 8 and x < 14:
+			return Color("#1fb946")
+		return Color("#f7f7f7")
+	return Color("#f7f7f7")
+
+
+func _is_safe_cell(x: int, y: int) -> bool:
+	return Vector2i(x, y) in [
+		Vector2i(2, 8),
+		Vector2i(6, 2),
+		Vector2i(8, 12),
+		Vector2i(12, 6),
+		Vector2i(1, 6),
+		Vector2i(6, 13),
+	]
+
+
+func _add_home_tokens(parent: Control, origin: Vector2, color: Color, token_text: String) -> void:
+	var offsets := [Vector2(0, 0), Vector2(2, 0), Vector2(0, 2), Vector2(2, 2)]
+	for offset in offsets:
+		var token := _label(token_text, 30, color, HORIZONTAL_ALIGNMENT_CENTER)
+		token.size = Vector2(BOARD_CELL, BOARD_CELL)
+		token.position = (origin + offset) * BOARD_CELL
+		parent.add_child(token)
+
+
+func _board_path_position(index: int) -> Vector2:
+	var path: Array[Vector2] = [
+		Vector2(1, 6), Vector2(2, 6), Vector2(3, 6), Vector2(4, 6), Vector2(5, 6),
+		Vector2(6, 5), Vector2(6, 4), Vector2(6, 3), Vector2(6, 2), Vector2(6, 1),
+		Vector2(7, 1), Vector2(8, 1), Vector2(8, 2), Vector2(8, 3), Vector2(8, 4),
+		Vector2(8, 5), Vector2(9, 6), Vector2(10, 6), Vector2(11, 6), Vector2(12, 6),
+		Vector2(13, 6), Vector2(13, 7), Vector2(13, 8), Vector2(12, 8), Vector2(11, 8),
+		Vector2(10, 8), Vector2(9, 8), Vector2(8, 9), Vector2(8, 10), Vector2(8, 11),
+		Vector2(8, 12), Vector2(8, 13), Vector2(7, 13), Vector2(6, 13), Vector2(6, 12),
+		Vector2(6, 11), Vector2(6, 10), Vector2(6, 9), Vector2(5, 8), Vector2(4, 8),
+		Vector2(3, 8), Vector2(2, 8), Vector2(1, 8), Vector2(1, 7),
+	]
+	var cell: Vector2 = path[index % path.size()]
+	return cell * BOARD_CELL + Vector2(0, -2)
+
+
+func _move_demo_piece(steps: int) -> void:
+	if not is_instance_valid(demo_piece):
+		return
+	var tween := create_tween()
+	for i in range(steps):
+		demo_piece_index = (demo_piece_index + 1) % 44
+		tween.tween_property(demo_piece, "position", _board_path_position(demo_piece_index), 0.18).set_trans(Tween.TRANS_SINE)
+
+
+func _show_screen(name: String) -> void:
+	current_screen = name
+	for key in screens.keys():
+		screens[key].visible = key == name
+	_apply_screen_camera()
+
+
+func _apply_screen_camera() -> void:
+	if current_screen == "play":
+		dice_root.position.x = -2.25
+		dice_root.position.z = 0.35
+		dice_root.scale = Vector3.ONE * 0.62
+	elif current_screen == "market":
+		dice_root.position.x = 1.45
+		dice_root.position.z = 0.0
+		dice_root.scale = Vector3.ONE * 1.0
+	else:
+		dice_root.position.x = 0.0
+		dice_root.position.z = 0.0
+		dice_root.scale = Vector3.ONE * 0.86
+
+
+func _update_camera(time: float) -> void:
+	if current_screen == "play":
+		camera.position = Vector3(-2.1 + sin(time * 0.22) * 0.08, 2.25, 5.4)
+		camera.look_at(Vector3(-2.1, 0.0, 0.0), Vector3.UP)
+	elif current_screen == "market":
+		camera.position = Vector3(1.3 + sin(time * 0.22) * 0.12, 2.8, 6.2)
+		camera.look_at(Vector3(1.3, 0.05, 0.0), Vector3.UP)
+	else:
+		camera.position = Vector3(sin(time * 0.22) * 0.18, 3.25, 7.4)
+		camera.look_at(Vector3(0, 0.1, 0), Vector3.UP)
+
+
+func _change_bet(amount: int) -> void:
+	bet_amount = clampi(bet_amount + amount, 100, 5000)
+	if bet_label:
+		bet_label.text = str(bet_amount) + " 🪙"
+
+
+func _equip_selected_skin() -> void:
+	equipped_skin = selected_skin
+	_select_skin(selected_skin)
 
 
 func _select_skin(index: int) -> void:
 	selected_skin = index
 	var skin: Dictionary = SKINS[index]
-	name_label.text = skin["name"]
-	rarity_label.text = skin["rarity"]
-	description_label.text = skin["description"]
+	if dice_name_label:
+		dice_name_label.text = "%s / %s" % [skin["arabic"], skin["name"]]
+	if dice_description_label:
+		dice_description_label.text = "%s\nالسعر: %s 🪙" % [skin["description"], skin["price"]]
 
-	for i in range(skin_buttons.size()):
-		skin_buttons[i].disabled = i == index
+	for i in range(market_cards.size()):
+		market_cards[i].disabled = i == index
+		market_cards[i].text = "%s\n%s • %s 🪙%s" % [
+			SKINS[i]["arabic"],
+			SKINS[i]["rarity"],
+			SKINS[i]["price"],
+			" • مجهز" if i == equipped_skin else "",
+		]
 
 	dice_body.material_override = _make_material(
 		skin["body"],
@@ -463,7 +861,6 @@ func _on_dice_input(_camera: Node, event: InputEvent, _position: Vector3, _norma
 func _roll_dice() -> void:
 	if rolling:
 		return
-
 	rolling = true
 	roll_time = 0.0
 	roll_result = randi_range(1, 6)
@@ -471,8 +868,10 @@ func _roll_dice() -> void:
 	roll_spin = Vector3(randf_range(15, 22), randf_range(18, 27), randf_range(13, 21)) * PI
 	blend_started = false
 	target_rotation = result_rotations[roll_result]
-	result_label.text = "يدور..."
-	roll_button.disabled = true
+	if result_label:
+		result_label.text = "يدور..."
+	if roll_button:
+		roll_button.disabled = true
 	_spawn_sparks(42, 0.82)
 
 
@@ -483,27 +882,27 @@ func _update_roll(delta: float) -> void:
 
 	if t < 0.78:
 		dice_root.rotation = roll_seed + roll_spin * eased
-		dice_root.position.y = 0.28 + abs(sin(t * PI * 5.4)) * (1.06 - t * 0.42)
-		dice_root.scale = Vector3.ONE * (1.0 + sin(t * PI) * 0.075)
+		dice_root.position.y = 0.32 + abs(sin(t * PI * 5.4)) * (1.06 - t * 0.42)
 	else:
 		if not blend_started:
 			blend_started = true
 			blend_start = dice_root.quaternion
 			_spawn_sparks(26, 0.36)
-
-		var u := smoothstep(0.0, 1.0, (t - 0.78) / 0.22)
+		var u := _smoothstep((t - 0.78) / 0.22)
 		dice_root.quaternion = blend_start.slerp(target_rotation, u)
-		dice_root.position.y = 0.28 + sin((1.0 - u) * PI * 3.0) * 0.09
-		dice_root.scale = Vector3.ONE * (1.0 + sin(u * PI) * 0.04)
+		dice_root.position.y = 0.32 + sin((1.0 - u) * PI * 3.0) * 0.09
 
 	if t >= 1.0:
 		rolling = false
 		dice_root.quaternion = target_rotation
-		dice_root.position.y = 0.28
-		dice_root.scale = Vector3.ONE
-		result_label.text = str(roll_result)
-		roll_button.disabled = false
+		dice_root.position.y = 0.32
+		if result_label:
+			result_label.text = str(roll_result)
+		if roll_button:
+			roll_button.disabled = false
 		_spawn_sparks(54, 1.2 if roll_result == 6 else 0.74)
+		if current_screen == "play":
+			_move_demo_piece(roll_result)
 
 
 func _spawn_sparks(count: int, force: float) -> void:
@@ -516,7 +915,7 @@ func _spawn_sparks(count: int, force: float) -> void:
 		mesh.radial_segments = 8
 		mesh.rings = 4
 		spark.mesh = mesh
-		spark.position = Vector3(randf_range(-0.7, 0.7), randf_range(0.1, 0.9), randf_range(-0.7, 0.7))
+		spark.position = dice_root.position + Vector3(randf_range(-0.7, 0.7), randf_range(0.1, 0.9), randf_range(-0.7, 0.7))
 		spark.material_override = _make_particle_material(skin["accent"])
 		spark.set_meta("velocity", Vector3(randf_range(-1.2, 1.2), randf_range(0.8, 2.2), randf_range(-1.2, 1.2)) * force)
 		spark.set_meta("life", randf_range(0.55, 1.2))
@@ -536,10 +935,113 @@ func _update_sparks(delta: float) -> void:
 		spark.scale = Vector3.ONE * max(life / max_life, 0.0)
 		spark.set_meta("life", life)
 		spark.set_meta("velocity", velocity)
-
 		if life <= 0.0:
 			sparks.remove_at(i)
 			spark.queue_free()
+
+
+func _screen_base(_name: String, top_color: Color, bottom_color: Color) -> Control:
+	var screen := Control.new()
+	screen.set_anchors_preset(Control.PRESET_FULL_RECT)
+	var bg := ColorRect.new()
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.color = bottom_color
+	screen.add_child(bg)
+	for i in range(7):
+		var stripe := ColorRect.new()
+		stripe.color = _with_alpha(top_color.lightened(0.08 * i), 0.2)
+		stripe.position = Vector2(i * 130.0 - 90.0, -30.0)
+		stripe.size = Vector2(110.0, 1400.0)
+		stripe.rotation = -0.55
+		bg.add_child(stripe)
+	return screen
+
+
+func _panel(size: Vector2, position: Vector2, color: Color, radius: int) -> Panel:
+	var panel := Panel.new()
+	panel.position = position
+	panel.size = size
+	var style := StyleBoxFlat.new()
+	style.bg_color = _with_alpha(color, 0.88)
+	style.border_color = _with_alpha(Color.WHITE, 0.12)
+	style.border_width_left = 2
+	style.border_width_right = 2
+	style.border_width_top = 2
+	style.border_width_bottom = 2
+	style.corner_radius_top_left = radius
+	style.corner_radius_top_right = radius
+	style.corner_radius_bottom_left = radius
+	style.corner_radius_bottom_right = radius
+	style.shadow_color = _with_alpha(Color.BLACK, 0.32)
+	style.shadow_size = 8
+	panel.add_theme_stylebox_override("panel", style)
+	return panel
+
+
+func _button(text: String, size: Vector2, color: Color, font_color: Color) -> Button:
+	var button := Button.new()
+	button.text = text
+	button.custom_minimum_size = size
+	button.size = size
+	button.add_theme_font_size_override("font_size", 20)
+	button.add_theme_color_override("font_color", font_color)
+	var style := StyleBoxFlat.new()
+	style.bg_color = color
+	style.corner_radius_top_left = 12
+	style.corner_radius_top_right = 12
+	style.corner_radius_bottom_left = 12
+	style.corner_radius_bottom_right = 12
+	style.border_color = _with_alpha(Color.WHITE, 0.22)
+	style.border_width_left = 2
+	style.border_width_right = 2
+	style.border_width_top = 2
+	style.border_width_bottom = 2
+	button.add_theme_stylebox_override("normal", style)
+	button.add_theme_stylebox_override("hover", style)
+	button.add_theme_stylebox_override("pressed", style)
+	return button
+
+
+func _label(text: String, font_size: int, color: Color, align: HorizontalAlignment) -> Label:
+	var label := Label.new()
+	label.text = text
+	label.add_theme_font_size_override("font_size", font_size)
+	label.add_theme_color_override("font_color", color)
+	label.horizontal_alignment = align
+	label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	return label
+
+
+func _player_card(player_name: String, badge: String, color: Color, position: Vector2) -> Panel:
+	var card := _panel(Vector2(330, 112), position, Color("#18152d"), 18)
+	var avatar := _label("●", 64, color, HORIZONTAL_ALIGNMENT_CENTER)
+	avatar.position = Vector2(18, 18)
+	avatar.size = Vector2(76, 76)
+	card.add_child(avatar)
+	var name_label := _label(player_name, 22, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
+	name_label.position = Vector2(112, 24)
+	name_label.size = Vector2(180, 32)
+	card.add_child(name_label)
+	var badge_label := _label("🎁 " + badge, 18, Color("#ffe17a"), HORIZONTAL_ALIGNMENT_LEFT)
+	badge_label.position = Vector2(112, 62)
+	badge_label.size = Vector2(160, 28)
+	card.add_child(badge_label)
+	return card
+
+
+func _player_chip(player_name: String, color: Color, position: Vector2) -> Control:
+	var chip := Control.new()
+	chip.position = position
+	chip.size = Vector2(220, 80)
+	var avatar := _label("●", 52, color, HORIZONTAL_ALIGNMENT_CENTER)
+	avatar.position = Vector2(0, 0)
+	avatar.size = Vector2(70, 70)
+	chip.add_child(avatar)
+	var name_label := _label(player_name, 18, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
+	name_label.position = Vector2(76, 22)
+	name_label.size = Vector2(130, 30)
+	chip.add_child(name_label)
+	return chip
 
 
 func _make_material(
@@ -568,6 +1070,11 @@ func _make_particle_material(color: Color) -> StandardMaterial3D:
 	material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	material.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	return material
+
+
+func _smoothstep(value: float) -> float:
+	var x := clampf(value, 0.0, 1.0)
+	return x * x * (3.0 - 2.0 * x)
 
 
 func _with_alpha(color: Color, alpha: float) -> Color:
