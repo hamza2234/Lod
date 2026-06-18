@@ -85,7 +85,7 @@ const HUMAN_TURN_SECONDS := 10.0
 const HUMAN_CHOICE_SECONDS := 6.0
 
 const PLAYER_NAMES := ["أنت", "زهور CPU", "عليوش CPU", "Biso Nova CPU"]
-const PLAYER_SYMBOLS := ["🥚", "🥚", "🥚", "🥚"]
+const PLAYER_SYMBOLS := ["⬮", "⬮", "⬮", "⬮"]
 const PLAYER_COLORS := [Color("#ffe15b"), Color("#91eaff"), Color("#ffc1ef"), Color("#95ff7d")]
 const PLAYER_START_OFFSETS := [39, 0, 13, 26]
 const SAFE_GLOBAL_INDICES := [0, 8, 13, 21, 26, 34, 39, 47]
@@ -495,9 +495,10 @@ func _build_play_screen() -> Control:
 	var bottom_bar := _panel(Vector2(560, 78), Vector2(80, 1082), Color("#15182c"), 18)
 	screen.add_child(bottom_bar)
 
-	roll_button = _button("🎲", Vector2(92, 92), Color("#d5b47b"), Color("#402400"))
+	roll_button = _button("⚂", Vector2(92, 92), Color("#d5b47b"), Color("#402400"))
 	roll_button.position = Vector2(118, 1012)
-	roll_button.add_theme_font_size_override("font_size", 38)
+	roll_button.add_theme_font_size_override("font_size", 48)
+	_style_dice_button()
 	roll_button.pressed.connect(_roll_dice)
 	screen.add_child(roll_button)
 
@@ -618,25 +619,61 @@ func _build_ludo_board(parent: Control) -> void:
 	var frame := _panel(Vector2(BOARD_CELL * 15.0 + 18.0, BOARD_CELL * 15.0 + 18.0), Vector2(-9, -9), Color("#8a4f2b"), 16)
 	parent.add_child(frame)
 
-	var grid := GridContainer.new()
-	grid.columns = 15
-	grid.position = Vector2.ZERO
-	grid.size = Vector2(BOARD_CELL * 15.0, BOARD_CELL * 15.0)
-	parent.add_child(grid)
+	_add_home_area(parent, Vector2(0, 0), Color("#1c9dff"), Color("#1070c3"))
+	_add_home_area(parent, Vector2(9, 0), Color("#f33a2f"), Color("#b52b26"))
+	_add_home_area(parent, Vector2(9, 9), Color("#24bf45"), Color("#168934"))
+	_add_home_area(parent, Vector2(0, 9), Color("#ffd21c"), Color("#bd9914"))
 
 	for y in range(15):
 		for x in range(15):
-			var cell := ColorRect.new()
-			cell.custom_minimum_size = Vector2(BOARD_CELL, BOARD_CELL)
-			cell.color = _ludo_cell_color(x, y)
-			grid.add_child(cell)
-			if _is_safe_cell(x, y):
-				var star := _label("★", 19, Color("#717171"), HORIZONTAL_ALIGNMENT_CENTER)
-				star.size = Vector2(BOARD_CELL, BOARD_CELL)
-				cell.add_child(star)
+			if _is_track_cell(x, y):
+				_add_board_cell(parent, x, y, _ludo_cell_color(x, y))
+
+	_add_center_triangles(parent)
 
 	_create_game_pieces(parent)
 	_reset_ludo_game()
+
+
+func _add_home_area(parent: Control, origin: Vector2, color: Color, inner_color: Color) -> void:
+	var home := _panel(Vector2(BOARD_CELL * 6.0, BOARD_CELL * 6.0), origin * BOARD_CELL, color, 22)
+	parent.add_child(home)
+	var circle := _panel(Vector2(BOARD_CELL * 4.25, BOARD_CELL * 4.25), origin * BOARD_CELL + Vector2(BOARD_CELL * 0.88, BOARD_CELL * 0.88), _with_alpha(inner_color, 0.62), 120)
+	parent.add_child(circle)
+	var slots: Array[Vector2] = [Vector2(1.65, 1.65), Vector2(3.55, 1.65), Vector2(1.65, 3.55), Vector2(3.55, 3.55)]
+	for slot in slots:
+		var slot_panel := _panel(Vector2(BOARD_CELL * 0.72, BOARD_CELL * 0.72), (origin + slot) * BOARD_CELL, _with_alpha(Color.WHITE, 0.18), 28)
+		parent.add_child(slot_panel)
+
+
+func _add_board_cell(parent: Control, x: int, y: int, color: Color) -> void:
+	var cell := _panel(Vector2(BOARD_CELL, BOARD_CELL), Vector2(x, y) * BOARD_CELL, color, 0)
+	parent.add_child(cell)
+	if _is_safe_cell(x, y):
+		var star := _label("★", 22, Color("#777777"), HORIZONTAL_ALIGNMENT_CENTER)
+		star.size = Vector2(BOARD_CELL, BOARD_CELL)
+		cell.add_child(star)
+
+
+func _is_track_cell(x: int, y: int) -> bool:
+	if x >= 6 and x <= 8:
+		return true
+	if y >= 6 and y <= 8:
+		return true
+	return false
+
+
+func _add_center_triangles(parent: Control) -> void:
+	var center := _panel(Vector2(BOARD_CELL * 3.0, BOARD_CELL * 3.0), Vector2(6, 6) * BOARD_CELL, Color("#132342"), 0)
+	parent.add_child(center)
+	var colors: Array[Color] = [Color("#299dff"), Color("#f43a32"), Color("#21c24c"), Color("#ffd21c")]
+	var labels: Array[String] = ["◀", "▲", "▶", "▼"]
+	var positions: Array[Vector2] = [Vector2(6, 7), Vector2(7, 6), Vector2(8, 7), Vector2(7, 8)]
+	for i in range(4):
+		var tri := _label(labels[i], 42, colors[i], HORIZONTAL_ALIGNMENT_CENTER)
+		tri.position = positions[i] * BOARD_CELL
+		tri.size = Vector2(BOARD_CELL, BOARD_CELL)
+		parent.add_child(tri)
 
 
 func _ludo_cell_color(x: int, y: int) -> Color:
@@ -752,7 +789,7 @@ func _on_piece_gui_input(event: InputEvent, player: int, piece: int) -> void:
 
 
 func _home_position(player: int, piece: int) -> Vector2:
-	var offsets: Array[Vector2] = [Vector2(0, 0), Vector2(2, 0), Vector2(0, 2), Vector2(2, 2)]
+	var offsets: Array[Vector2] = [Vector2(1.45, 1.45), Vector2(3.35, 1.45), Vector2(1.45, 3.35), Vector2(3.35, 3.35)]
 	return (home_origins[player] + offsets[piece]) * BOARD_CELL + _stack_offset(piece)
 
 
@@ -896,7 +933,7 @@ func _update_turn_ui() -> void:
 	if roll_button:
 		roll_button.position = _dice_button_position_for_player(current_player)
 		if not rolling:
-			roll_button.text = "🎲"
+			roll_button.text = _dice_face(max(1, roll_result))
 	if status_label:
 		if current_player == 0:
 			status_label.text = "دورك. ارم النرد، ثم اختر قطعة مضيئة إذا وجدت أكثر من حركة."
@@ -1154,10 +1191,10 @@ func _start_new_match() -> void:
 
 func _apply_screen_camera() -> void:
 	if current_screen == "play":
-		dice_root.visible = false
+		dice_root.visible = true
 		dice_root.position.x = -3.55
 		dice_root.position.z = 0.25
-		dice_root.scale = Vector3.ONE * 0.74
+		dice_root.scale = Vector3.ONE * 0.68
 	elif current_screen == "market":
 		dice_root.visible = true
 		dice_root.position.x = 1.45
@@ -1366,7 +1403,7 @@ func _roll_dice() -> void:
 	if result_label:
 		result_label.text = "يدور..."
 	if roll_button:
-		roll_button.text = "..."
+		roll_button.text = "⋯"
 		roll_button.disabled = true
 	_spawn_sparks(42, 0.82)
 
@@ -1396,7 +1433,7 @@ func _update_roll(delta: float) -> void:
 		if result_label:
 			result_label.text = str(roll_result)
 		if roll_button:
-			roll_button.text = str(roll_result)
+			roll_button.text = _dice_face(roll_result)
 		if roll_button and current_screen != "play":
 			roll_button.disabled = false
 		_spawn_sparks(54, 1.2 if roll_result == 6 else 0.74)
@@ -1498,6 +1535,49 @@ func _button(text: String, size: Vector2, color: Color, font_color: Color) -> Bu
 	button.add_theme_stylebox_override("hover", style)
 	button.add_theme_stylebox_override("pressed", style)
 	return button
+
+
+func _style_dice_button() -> void:
+	if not roll_button:
+		return
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color("#d3a55d")
+	normal.border_color = Color("#f9df9b")
+	normal.border_width_left = 5
+	normal.border_width_right = 5
+	normal.border_width_top = 5
+	normal.border_width_bottom = 5
+	normal.corner_radius_top_left = 16
+	normal.corner_radius_top_right = 16
+	normal.corner_radius_bottom_left = 16
+	normal.corner_radius_bottom_right = 16
+	normal.shadow_color = _with_alpha(Color.BLACK, 0.42)
+	normal.shadow_size = 8
+	var pressed := normal.duplicate() as StyleBoxFlat
+	pressed.bg_color = Color("#b9853e")
+	roll_button.add_theme_stylebox_override("normal", normal)
+	roll_button.add_theme_stylebox_override("hover", normal)
+	roll_button.add_theme_stylebox_override("pressed", pressed)
+	roll_button.add_theme_stylebox_override("disabled", normal)
+	roll_button.add_theme_color_override("font_color", Color("#4b2500"))
+	roll_button.add_theme_color_override("font_disabled_color", Color("#4b2500"))
+
+
+func _dice_face(value: int) -> String:
+	match value:
+		1:
+			return "⚀"
+		2:
+			return "⚁"
+		3:
+			return "⚂"
+		4:
+			return "⚃"
+		5:
+			return "⚄"
+		6:
+			return "⚅"
+	return "⚂"
 
 
 func _label(text: String, font_size: int, color: Color, align: HorizontalAlignment) -> Label:
