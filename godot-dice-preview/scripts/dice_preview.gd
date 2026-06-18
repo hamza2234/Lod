@@ -142,8 +142,12 @@ var bet_label: Label
 var status_label: Label
 var turn_label: Label
 var timer_label: Label
+var timer_ring: TextureProgressBar
 var demo_piece: Label
 var board_holder: Control
+var player_chips: Array[Control] = []
+var player_turn_rings: Array[Panel] = []
+var move_markers: Array[Label] = []
 var piece_labels: Array = []
 var piece_progress: Array = []
 var home_origins: Array[Vector2] = [
@@ -494,15 +498,22 @@ func _build_play_screen() -> Control:
 	var screen := _screen_base("play", Color("#281738"), Color("#0a0d26"))
 	_add_top_bar(screen, "اللعبة", true)
 
-	screen.add_child(_player_chip("زهور", Color("#28b6ff"), Vector2(34, 104)))
-	screen.add_child(_player_chip("عليوش", Color("#ffcf40"), Vector2(458, 104)))
-	screen.add_child(_player_chip("Biso Nova", Color("#f3d9ff"), Vector2(448, 936)))
-	screen.add_child(_player_chip("أنت", Color("#ffd24d"), Vector2(40, 936)))
+	player_chips.clear()
+	player_turn_rings.clear()
+	screen.add_child(_player_chip(1, "زهور", Color("#28b6ff"), Vector2(34, 104)))
+	screen.add_child(_player_chip(2, "عليوش", Color("#ffcf40"), Vector2(458, 104)))
+	screen.add_child(_player_chip(3, "Biso Nova", Color("#f3d9ff"), Vector2(448, 936)))
+	screen.add_child(_player_chip(0, "أنت", Color("#ffd24d"), Vector2(40, 936)))
 
+	var board_aspect := AspectRatioContainer.new()
+	board_aspect.position = Vector2(30, 234)
+	board_aspect.size = Vector2(BOARD_CELL * 15.0, BOARD_CELL * 15.0)
+	board_aspect.ratio = 1.0
+	screen.add_child(board_aspect)
 	board_holder = Control.new()
-	board_holder.position = Vector2(30, 234)
+	board_holder.custom_minimum_size = Vector2(BOARD_CELL * 15.0, BOARD_CELL * 15.0)
 	board_holder.size = Vector2(BOARD_CELL * 15.0, BOARD_CELL * 15.0)
-	screen.add_child(board_holder)
+	board_aspect.add_child(board_holder)
 	_build_ludo_board(board_holder)
 
 	turn_label = _label("دورك", 24, Color("#fff2a6"), HORIZONTAL_ALIGNMENT_CENTER)
@@ -535,6 +546,15 @@ func _build_play_screen() -> Control:
 	timer_label.position = Vector2(210, 14)
 	timer_label.size = Vector2(120, 48)
 	bottom_bar.add_child(timer_label)
+	timer_ring = TextureProgressBar.new()
+	timer_ring.position = Vector2(248, 6)
+	timer_ring.size = Vector2(64, 64)
+	timer_ring.min_value = 0
+	timer_ring.max_value = HUMAN_TURN_SECONDS
+	timer_ring.value = HUMAN_TURN_SECONDS
+	timer_ring.tint_progress = Color("#7dffbc")
+	timer_ring.tint_under = _with_alpha(Color.WHITE, 0.12)
+	bottom_bar.add_child(timer_ring)
 
 	var market_tab := _button("السوق", Vector2(96, 44), Color("#2bc4ff"), Color.WHITE)
 	market_tab.position = Vector2(440, 17)
@@ -683,11 +703,29 @@ func _build_play_dice_viewport(screen: Control) -> void:
 	dice_box.size = Vector3(1.45, 1.45, 1.45)
 	dice_shape.shape = dice_box
 	play_dice_body.add_child(dice_shape)
+	_add_dice_face_raycasts(play_dice_body)
 
 	play_dice_root = Node3D.new()
 	play_dice_root.name = "GameplayDiceModel"
 	play_dice_body.add_child(play_dice_root)
 	_rebuild_play_dice_model()
+
+
+func _add_dice_face_raycasts(parent: Node3D) -> void:
+	var probes := {
+		"face_1": Vector3(0, 0, 1),
+		"face_6": Vector3(0, 0, -1),
+		"face_2": Vector3(0, 1, 0),
+		"face_5": Vector3(0, -1, 0),
+		"face_3": Vector3(1, 0, 0),
+		"face_4": Vector3(-1, 0, 0),
+	}
+	for name in probes.keys():
+		var ray := RayCast3D.new()
+		ray.name = name
+		ray.target_position = probes[name] * 1.2
+		ray.enabled = true
+		parent.add_child(ray)
 
 
 func _rebuild_play_dice_model() -> void:
@@ -1056,15 +1094,38 @@ func _set_piece_highlights(moves: Array[int]) -> void:
 		label.scale = Vector2(1.28, 1.28)
 		label.add_theme_color_override("font_outline_color", Color("#fff56d"))
 		label.add_theme_constant_override("outline_size", 6)
+		var marker := _label("➤", 28, Color("#ff9f1c"), HORIZONTAL_ALIGNMENT_CENTER)
+		var progress: int = piece_progress[current_player][piece]
+		var target_progress := 0 if progress < 0 else progress + roll_result
+		marker.size = Vector2(BOARD_CELL, BOARD_CELL)
+		marker.position = _preview_piece_position(current_player, piece, target_progress)
+		board_holder.add_child(marker)
+		move_markers.append(marker)
+		var tween := create_tween()
+		tween.set_loops()
+		tween.tween_property(marker, "scale", Vector2(1.18, 1.18), 0.32).set_trans(Tween.TRANS_SINE)
+		tween.tween_property(marker, "scale", Vector2.ONE, 0.32).set_trans(Tween.TRANS_SINE)
 
 
 func _clear_piece_highlights() -> void:
+	for marker in move_markers:
+		if is_instance_valid(marker):
+			marker.queue_free()
+	move_markers.clear()
 	for player in range(piece_labels.size()):
 		for piece in range(piece_labels[player].size()):
 			var label: Label = piece_labels[player][piece]
 			label.scale = Vector2.ONE
 			label.add_theme_color_override("font_outline_color", Color("#fff6cf"))
 			label.add_theme_constant_override("outline_size", 2)
+
+
+func _preview_piece_position(player: int, piece: int, progress: int) -> Vector2:
+	if progress >= FINISH_PROGRESS:
+		return Vector2(7, 7) * BOARD_CELL + _finish_offset(player, piece)
+	if progress >= HOME_ENTRY_PROGRESS:
+		return _home_lane_position(player, progress - HOME_ENTRY_PROGRESS, piece)
+	return _board_path_position(_global_index_for_progress(player, progress)) + _stack_offset(piece)
 
 
 func _board_path_position(index: int) -> Vector2:
@@ -1138,6 +1199,14 @@ func _advance_turn() -> void:
 func _update_turn_ui() -> void:
 	if turn_label:
 		turn_label.text = "الدور: " + PLAYER_NAMES[current_player]
+	for i in range(player_turn_rings.size()):
+		if player_turn_rings[i]:
+			player_turn_rings[i].visible = i == current_player
+			if i == current_player:
+				var tween := create_tween()
+				tween.set_loops(2)
+				tween.tween_property(player_turn_rings[i], "scale", Vector2(1.1, 1.1), 0.28).set_trans(Tween.TRANS_SINE)
+				tween.tween_property(player_turn_rings[i], "scale", Vector2.ONE, 0.28).set_trans(Tween.TRANS_SINE)
 	if play_dice_container:
 		play_dice_container.position = _dice_viewport_position_for_player(current_player)
 	if roll_button:
@@ -1174,12 +1243,17 @@ func _start_human_timer(seconds: float) -> void:
 	turn_timer_active = true
 	if timer_label:
 		timer_label.text = str(int(ceil(seconds)))
+	if timer_ring:
+		timer_ring.max_value = seconds
+		timer_ring.value = seconds
 
 
 func _stop_turn_timer() -> void:
 	turn_timer_active = false
 	if timer_label:
 		timer_label.text = "--"
+	if timer_ring:
+		timer_ring.value = 0
 
 
 func _update_turn_timer() -> void:
@@ -1188,6 +1262,8 @@ func _update_turn_timer() -> void:
 	var remaining: float = max(0.0, turn_deadline - Time.get_ticks_msec() / 1000.0)
 	if timer_label:
 		timer_label.text = str(int(ceil(remaining)))
+	if timer_ring:
+		timer_ring.value = remaining
 	if remaining > 0.0:
 		return
 	turn_timer_active = false
@@ -1908,11 +1984,18 @@ func _player_card(player_name: String, badge: String, color: Color, position: Ve
 	return card
 
 
-func _player_chip(player_name: String, color: Color, position: Vector2) -> Control:
+func _player_chip(player_index: int, player_name: String, color: Color, position: Vector2) -> Control:
 	var chip := Control.new()
 	chip.position = position
 	chip.size = Vector2(220, 80)
-	var avatar_bg := _panel(Vector2(54, 54), Vector2(0, 6), _with_alpha(color, 0.92), 28)
+
+	var turn_ring := _panel(Vector2(74, 74), Vector2(-10, -4), Color("#ffd34a"), 42)
+	turn_ring.visible = false
+	chip.add_child(turn_ring)
+	player_turn_rings.resize(max(player_turn_rings.size(), player_index + 1))
+	player_turn_rings[player_index] = turn_ring
+
+	var avatar_bg := _panel(Vector2(62, 62), Vector2(-4, 2), _with_alpha(color, 0.92), 32)
 	chip.add_child(avatar_bg)
 	var avatar_icon := "🙂"
 	if player_name.contains("زهور"):
@@ -1921,14 +2004,27 @@ func _player_chip(player_name: String, color: Color, position: Vector2) -> Contr
 		avatar_icon = "🧔"
 	elif player_name.contains("Biso"):
 		avatar_icon = "👤"
-	var avatar := _label(avatar_icon, 30, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
-	avatar.position = Vector2(0, 6)
-	avatar.size = Vector2(54, 54)
+	var avatar := _label(avatar_icon, 34, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	avatar.position = Vector2(-4, 2)
+	avatar.size = Vector2(62, 62)
 	chip.add_child(avatar)
+
+	var gift := _label("🎁", 20, Color("#ffd34a"), HORIZONTAL_ALIGNMENT_CENTER)
+	gift.position = Vector2(38, -6)
+	gift.size = Vector2(28, 28)
+	chip.add_child(gift)
+
+	var mute := _label("🔇", 18, Color("#e6d8a7"), HORIZONTAL_ALIGNMENT_CENTER)
+	mute.position = Vector2(-22, 22)
+	mute.size = Vector2(28, 28)
+	chip.add_child(mute)
+
 	var name_label := _label(player_name, 18, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
 	name_label.position = Vector2(62, 20)
 	name_label.size = Vector2(130, 30)
 	chip.add_child(name_label)
+	player_chips.resize(max(player_chips.size(), player_index + 1))
+	player_chips[player_index] = chip
 	return chip
 
 
