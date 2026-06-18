@@ -77,15 +77,17 @@ const FACE_PIPS := {
 	6: [Vector2(-0.42, -0.48), Vector2(-0.42, 0.0), Vector2(-0.42, 0.48), Vector2(0.42, -0.48), Vector2(0.42, 0.0), Vector2(0.42, 0.48)],
 }
 
-const BOARD_CELL := 30.0
+const BOARD_CELL := 44.0
 const MAIN_PATH_LENGTH := 52
 const HOME_ENTRY_PROGRESS := 52
 const FINISH_PROGRESS := 58
+const HUMAN_TURN_SECONDS := 10.0
+const HUMAN_CHOICE_SECONDS := 6.0
 
-const PLAYER_NAMES := ["أنت", "عليوش CPU", "Biso CPU", "زهور CPU"]
-const PLAYER_SYMBOLS := ["●", "◆", "●", "▲"]
-const PLAYER_COLORS := [Color("#91eaff"), Color("#ffc1ef"), Color("#95ff7d"), Color("#ffe15b")]
-const PLAYER_START_OFFSETS := [0, 13, 26, 39]
+const PLAYER_NAMES := ["أنت", "زهور CPU", "عليوش CPU", "Biso Nova CPU"]
+const PLAYER_SYMBOLS := ["🥚", "🥚", "🥚", "🥚"]
+const PLAYER_COLORS := [Color("#ffe15b"), Color("#91eaff"), Color("#ffc1ef"), Color("#95ff7d")]
+const PLAYER_START_OFFSETS := [39, 0, 13, 26]
 const SAFE_GLOBAL_INDICES := [0, 8, 13, 21, 26, 34, 39, 47]
 
 var result_rotations := {}
@@ -100,6 +102,8 @@ var pending_moves: Array[int] = []
 var awaiting_piece_choice := false
 var game_busy := false
 var game_over := false
+var turn_deadline := 0.0
+var turn_timer_active := false
 
 var camera: Camera3D
 var dice_root: Node3D
@@ -120,15 +124,16 @@ var roll_button: Button
 var bet_label: Label
 var status_label: Label
 var turn_label: Label
+var timer_label: Label
 var demo_piece: Label
 var board_holder: Control
 var piece_labels: Array = []
 var piece_progress: Array = []
 var home_origins: Array[Vector2] = [
+	Vector2(1.1, 10.2),
 	Vector2(1.1, 1.2),
 	Vector2(10.2, 1.2),
 	Vector2(10.2, 10.2),
-	Vector2(1.1, 10.2),
 ]
 
 var rolling := false
@@ -166,6 +171,16 @@ func _process(delta: float) -> void:
 		dice_root.rotate_y(delta * 0.22)
 
 	_update_sparks(delta)
+	_update_turn_timer()
+	if roll_button:
+		roll_button.pivot_offset = roll_button.size / 2.0
+		if rolling and current_screen == "play":
+			roll_button.rotation += delta * 10.0
+			roll_button.scale = Vector2.ONE * (1.0 + abs(sin(time * 16.0)) * 0.08)
+		else:
+			roll_button.rotation = lerp_angle(roll_button.rotation, 0.0, min(1.0, delta * 8.0))
+			if not awaiting_piece_choice:
+				roll_button.scale = roll_button.scale.lerp(Vector2.ONE, min(1.0, delta * 8.0))
 
 
 func _unhandled_input(event: InputEvent) -> void:
@@ -455,53 +470,54 @@ func _build_play_screen() -> Control:
 	var screen := _screen_base("play", Color("#281738"), Color("#0a0d26"))
 	_add_top_bar(screen, "اللعبة", true)
 
-	screen.add_child(_player_chip("زهور", Color("#28b6ff"), Vector2(40, 130)))
-	screen.add_child(_player_chip("عليوش", Color("#ffcf40"), Vector2(410, 130)))
-	screen.add_child(_player_chip("Biso Nova", Color("#f3d9ff"), Vector2(410, 820)))
-	screen.add_child(_player_chip("Guest", Color("#ffd24d"), Vector2(60, 820)))
+	screen.add_child(_player_chip("زهور", Color("#28b6ff"), Vector2(34, 104)))
+	screen.add_child(_player_chip("عليوش", Color("#ffcf40"), Vector2(458, 104)))
+	screen.add_child(_player_chip("Biso Nova", Color("#f3d9ff"), Vector2(448, 936)))
+	screen.add_child(_player_chip("أنت", Color("#ffd24d"), Vector2(40, 936)))
 
 	board_holder = Control.new()
-	board_holder.position = Vector2(135, 300)
+	board_holder.position = Vector2(30, 234)
 	board_holder.size = Vector2(BOARD_CELL * 15.0, BOARD_CELL * 15.0)
 	screen.add_child(board_holder)
 	_build_ludo_board(board_holder)
 
 	turn_label = _label("دورك", 24, Color("#fff2a6"), HORIZONTAL_ALIGNMENT_CENTER)
-	turn_label.position = Vector2(140, 760)
+	turn_label.position = Vector2(140, 910)
 	turn_label.size = Vector2(440, 42)
 	screen.add_child(turn_label)
 
 	status_label = _label("ارم النرد. تحتاج 6 لإخراج قطعة من البيت.", 18, Color("#dff5ff"), HORIZONTAL_ALIGNMENT_CENTER)
-	status_label.position = Vector2(70, 800)
+	status_label.position = Vector2(70, 988)
 	status_label.size = Vector2(580, 64)
 	status_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	screen.add_child(status_label)
 
-	var dice_hint := _label("النرد المجسم هنا ↙", 16, Color("#fff0a8"), HORIZONTAL_ALIGNMENT_LEFT)
-	dice_hint.position = Vector2(36, 906)
-	dice_hint.size = Vector2(180, 32)
-	screen.add_child(dice_hint)
-
-	var bottom_bar := _panel(Vector2(360, 88), Vector2(180, 940), Color("#15182c"), 18)
+	var bottom_bar := _panel(Vector2(560, 78), Vector2(80, 1082), Color("#15182c"), 18)
 	screen.add_child(bottom_bar)
 
-	roll_button = _button("ارم النرد", Vector2(138, 58), Color("#ffce2f"), Color("#402400"))
-	roll_button.position = Vector2(26, 15)
+	roll_button = _button("🎲", Vector2(92, 92), Color("#d5b47b"), Color("#402400"))
+	roll_button.position = Vector2(118, 1012)
+	roll_button.add_theme_font_size_override("font_size", 38)
 	roll_button.pressed.connect(_roll_dice)
-	bottom_bar.add_child(roll_button)
+	screen.add_child(roll_button)
 
-	result_label = _label("جاهز", 34, Color("#fff4aa"), HORIZONTAL_ALIGNMENT_CENTER)
-	result_label.position = Vector2(176, 20)
-	result_label.size = Vector2(96, 48)
+	result_label = _label("جاهز", 30, Color("#fff4aa"), HORIZONTAL_ALIGNMENT_CENTER)
+	result_label.position = Vector2(20, 14)
+	result_label.size = Vector2(160, 48)
 	bottom_bar.add_child(result_label)
 
-	var market_tab := _button("السوق", Vector2(76, 44), Color("#2bc4ff"), Color.WHITE)
-	market_tab.position = Vector2(274, 22)
+	timer_label = _label("10", 30, Color("#7dffbc"), HORIZONTAL_ALIGNMENT_CENTER)
+	timer_label.position = Vector2(210, 14)
+	timer_label.size = Vector2(120, 48)
+	bottom_bar.add_child(timer_label)
+
+	var market_tab := _button("السوق", Vector2(96, 44), Color("#2bc4ff"), Color.WHITE)
+	market_tab.position = Vector2(440, 17)
 	market_tab.pressed.connect(_show_screen.bind("market"))
 	bottom_bar.add_child(market_tab)
 
 	var restart := _button("جديدة", Vector2(96, 42), Color("#3a456a"), Color.WHITE)
-	restart.position = Vector2(312, 790)
+	restart.position = Vector2(312, 1168)
 	restart.pressed.connect(_start_new_match)
 	screen.add_child(restart)
 
@@ -619,11 +635,6 @@ func _build_ludo_board(parent: Control) -> void:
 				star.size = Vector2(BOARD_CELL, BOARD_CELL)
 				cell.add_child(star)
 
-	_add_home_tokens(parent, Vector2(1.1, 1.2), Color("#92edff"), "●")
-	_add_home_tokens(parent, Vector2(10.2, 1.2), Color("#ffd2f4"), "◆")
-	_add_home_tokens(parent, Vector2(10.2, 10.2), Color("#9cff80"), "●")
-	_add_home_tokens(parent, Vector2(1.1, 10.2), Color("#ffe05c"), "▲")
-
 	_create_game_pieces(parent)
 	_reset_ludo_game()
 
@@ -689,10 +700,12 @@ func _create_game_pieces(parent: Control) -> void:
 	for player in range(4):
 		var player_labels: Array[Label] = []
 		for piece in range(4):
-			var token := _label(PLAYER_SYMBOLS[player], 31, PLAYER_COLORS[player], HORIZONTAL_ALIGNMENT_CENTER)
+			var token := _label(PLAYER_SYMBOLS[player], 42, PLAYER_COLORS[player], HORIZONTAL_ALIGNMENT_CENTER)
 			token.size = Vector2(BOARD_CELL * 1.15, BOARD_CELL * 1.15)
 			token.mouse_filter = Control.MOUSE_FILTER_STOP
 			token.add_theme_color_override("font_shadow_color", Color("#231400"))
+			token.add_theme_color_override("font_outline_color", Color("#fff6cf"))
+			token.add_theme_constant_override("outline_size", 2)
 			token.add_theme_constant_override("shadow_offset_x", 2)
 			token.add_theme_constant_override("shadow_offset_y", 2)
 			token.gui_input.connect(_on_piece_gui_input.bind(player, piece))
@@ -724,12 +737,14 @@ func _on_piece_gui_input(event: InputEvent, player: int, piece: int) -> void:
 		return
 	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
 		if piece in pending_moves:
+			_stop_turn_timer()
 			awaiting_piece_choice = false
 			pending_moves.clear()
 			_clear_piece_highlights()
 			_move_piece(player, piece, roll_result)
 	elif event is InputEventScreenTouch and event.pressed:
 		if piece in pending_moves:
+			_stop_turn_timer()
 			awaiting_piece_choice = false
 			pending_moves.clear()
 			_clear_piece_highlights()
@@ -753,23 +768,23 @@ func _piece_position(player: int, piece: int) -> Vector2:
 
 
 func _finish_offset(player: int, piece: int) -> Vector2:
-	var offsets: Array[Vector2] = [Vector2(-13, -13), Vector2(13, -13), Vector2(-13, 13), Vector2(13, 13)]
+	var offsets: Array[Vector2] = [Vector2(-16, -16), Vector2(16, -16), Vector2(-16, 16), Vector2(16, 16)]
 	return offsets[piece] + Vector2(player % 2 * 4, player / 2 * 4)
 
 
 func _home_lane_position(player: int, lane_index: int, piece: int) -> Vector2:
 	var lanes: Array = [
+		[Vector2(7, 12), Vector2(7, 11), Vector2(7, 10), Vector2(7, 9), Vector2(7, 8), Vector2(7, 7)],
 		[Vector2(2, 7), Vector2(3, 7), Vector2(4, 7), Vector2(5, 7), Vector2(6, 7), Vector2(7, 7)],
 		[Vector2(7, 2), Vector2(7, 3), Vector2(7, 4), Vector2(7, 5), Vector2(7, 6), Vector2(7, 7)],
 		[Vector2(12, 7), Vector2(11, 7), Vector2(10, 7), Vector2(9, 7), Vector2(8, 7), Vector2(7, 7)],
-		[Vector2(7, 12), Vector2(7, 11), Vector2(7, 10), Vector2(7, 9), Vector2(7, 8), Vector2(7, 7)],
 	]
 	var cell: Vector2 = lanes[player][clampi(lane_index, 0, 5)]
-	return cell * BOARD_CELL + _stack_offset(piece) + Vector2(0, -2)
+	return cell * BOARD_CELL + _stack_offset(piece) + Vector2(-3, -5)
 
 
 func _stack_offset(piece: int) -> Vector2:
-	var offsets: Array[Vector2] = [Vector2(-5, -5), Vector2(5, -5), Vector2(-5, 5), Vector2(5, 5)]
+	var offsets: Array[Vector2] = [Vector2(-9, -9), Vector2(9, -9), Vector2(-9, 9), Vector2(9, 9)]
 	return offsets[piece]
 
 
@@ -803,7 +818,8 @@ func _clear_piece_highlights() -> void:
 		for piece in range(piece_labels[player].size()):
 			var label: Label = piece_labels[player][piece]
 			label.scale = Vector2.ONE
-			label.add_theme_constant_override("outline_size", 0)
+			label.add_theme_color_override("font_outline_color", Color("#fff6cf"))
+			label.add_theme_constant_override("outline_size", 2)
 
 
 func _board_path_position(index: int) -> Vector2:
@@ -821,7 +837,7 @@ func _board_path_position(index: int) -> Vector2:
 		Vector2(0, 7), Vector2(0, 6),
 	]
 	var cell: Vector2 = path[index % path.size()]
-	return cell * BOARD_CELL + Vector2(0, -2)
+	return cell * BOARD_CELL + Vector2(-3, -5)
 
 
 func _move_demo_piece(steps: int) -> void:
@@ -858,6 +874,10 @@ func _start_turn(player: int) -> void:
 	pending_moves.clear()
 	_clear_piece_highlights()
 	_update_turn_ui()
+	if current_player == 0 and current_screen == "play":
+		_start_human_timer(HUMAN_TURN_SECONDS)
+	else:
+		_stop_turn_timer()
 
 	if current_screen == "play" and current_player != 0:
 		await get_tree().create_timer(0.85).timeout
@@ -873,6 +893,10 @@ func _advance_turn() -> void:
 func _update_turn_ui() -> void:
 	if turn_label:
 		turn_label.text = "الدور: " + PLAYER_NAMES[current_player]
+	if roll_button:
+		roll_button.position = _dice_button_position_for_player(current_player)
+		if not rolling:
+			roll_button.text = "🎲"
 	if status_label:
 		if current_player == 0:
 			status_label.text = "دورك. ارم النرد، ثم اختر قطعة مضيئة إذا وجدت أكثر من حركة."
@@ -880,6 +904,55 @@ func _update_turn_ui() -> void:
 			status_label.text = PLAYER_NAMES[current_player] + " يفكر ويرمي النرد..."
 	if roll_button:
 		roll_button.disabled = current_player != 0 or rolling or game_busy or game_over
+
+
+func _dice_button_position_for_player(player: int) -> Vector2:
+	match player:
+		0:
+			return Vector2(128, 1010)
+		1:
+			return Vector2(128, 158)
+		2:
+			return Vector2(500, 158)
+		3:
+			return Vector2(500, 1010)
+	return Vector2(128, 1010)
+
+
+func _start_human_timer(seconds: float) -> void:
+	turn_deadline = Time.get_ticks_msec() / 1000.0 + seconds
+	turn_timer_active = true
+	if timer_label:
+		timer_label.text = str(int(ceil(seconds)))
+
+
+func _stop_turn_timer() -> void:
+	turn_timer_active = false
+	if timer_label:
+		timer_label.text = "--"
+
+
+func _update_turn_timer() -> void:
+	if not turn_timer_active or current_screen != "play" or game_over or current_player != 0:
+		return
+	var remaining: float = max(0.0, turn_deadline - Time.get_ticks_msec() / 1000.0)
+	if timer_label:
+		timer_label.text = str(int(ceil(remaining)))
+	if remaining > 0.0:
+		return
+	turn_timer_active = false
+	if awaiting_piece_choice:
+		var fallback := _choose_cpu_move(0, pending_moves, roll_result)
+		if status_label:
+			status_label.text = "انتهى الوقت، تم اختيار حركة تلقائيًا."
+		awaiting_piece_choice = false
+		pending_moves.clear()
+		_clear_piece_highlights()
+		_move_piece(0, fallback, roll_result)
+	elif not rolling and not game_busy:
+		if status_label:
+			status_label.text = "انتهى الوقت، تم رمي النرد تلقائيًا."
+		_roll_dice()
 
 
 func _handle_roll_result() -> void:
@@ -926,6 +999,7 @@ func _handle_roll_result() -> void:
 			pending_moves = moves
 			game_busy = false
 			_set_piece_highlights(moves)
+			_start_human_timer(HUMAN_CHOICE_SECONDS)
 			if status_label:
 				status_label.text = "اختر القطعة المضيئة التي تريد تحريكها " + str(roll_result) + " خطوات."
 	else:
@@ -1080,14 +1154,17 @@ func _start_new_match() -> void:
 
 func _apply_screen_camera() -> void:
 	if current_screen == "play":
+		dice_root.visible = false
 		dice_root.position.x = -3.55
 		dice_root.position.z = 0.25
 		dice_root.scale = Vector3.ONE * 0.74
 	elif current_screen == "market":
+		dice_root.visible = true
 		dice_root.position.x = 1.45
 		dice_root.position.z = 0.0
 		dice_root.scale = Vector3.ONE * 1.0
 	else:
+		dice_root.visible = true
 		dice_root.position.x = 0.0
 		dice_root.position.z = 0.0
 		dice_root.scale = Vector3.ONE * 0.86
@@ -1278,6 +1355,7 @@ func _roll_dice() -> void:
 		if current_player == 0 and roll_button and roll_button.disabled:
 			return
 		game_busy = true
+		_stop_turn_timer()
 	rolling = true
 	roll_time = 0.0
 	roll_result = randi_range(1, 6)
@@ -1288,6 +1366,7 @@ func _roll_dice() -> void:
 	if result_label:
 		result_label.text = "يدور..."
 	if roll_button:
+		roll_button.text = "..."
 		roll_button.disabled = true
 	_spawn_sparks(42, 0.82)
 
@@ -1316,6 +1395,8 @@ func _update_roll(delta: float) -> void:
 		dice_root.position.y = base_y
 		if result_label:
 			result_label.text = str(roll_result)
+		if roll_button:
+			roll_button.text = str(roll_result)
 		if roll_button and current_screen != "play":
 			roll_button.disabled = false
 		_spawn_sparks(54, 1.2 if roll_result == 6 else 0.74)
