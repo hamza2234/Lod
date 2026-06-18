@@ -120,6 +120,7 @@ var dice_root: Node3D
 var dice_body: MeshInstance3D
 var pip_root: Node3D
 var cinematic_root: Node3D
+var play_dice_container: SubViewportContainer
 var play_dice_viewport: SubViewport
 var play_dice_root: Node3D
 var play_dice_pip_root: Node3D
@@ -624,18 +625,18 @@ func _build_market_screen() -> Control:
 
 
 func _build_play_dice_viewport(screen: Control) -> void:
-	var container := SubViewportContainer.new()
-	container.position = Vector2(78, 950)
-	container.size = Vector2(170, 170)
-	container.stretch = true
-	container.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	screen.add_child(container)
+	play_dice_container = SubViewportContainer.new()
+	play_dice_container.position = _dice_viewport_position_for_player(current_player)
+	play_dice_container.size = Vector2(108, 108)
+	play_dice_container.stretch = true
+	play_dice_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	screen.add_child(play_dice_container)
 
 	play_dice_viewport = SubViewport.new()
 	play_dice_viewport.size = Vector2i(220, 220)
 	play_dice_viewport.transparent_bg = true
 	play_dice_viewport.render_target_update_mode = SubViewport.UPDATE_ALWAYS
-	container.add_child(play_dice_viewport)
+	play_dice_container.add_child(play_dice_viewport)
 
 	var root := Node3D.new()
 	play_dice_viewport.add_child(root)
@@ -1111,10 +1112,11 @@ func _advance_turn() -> void:
 func _update_turn_ui() -> void:
 	if turn_label:
 		turn_label.text = "الدور: " + PLAYER_NAMES[current_player]
+	if play_dice_container:
+		play_dice_container.position = _dice_viewport_position_for_player(current_player)
 	if roll_button:
 		roll_button.position = _dice_button_position_for_player(current_player)
-		if not rolling:
-			roll_button.text = _dice_face(max(1, roll_result))
+		_make_button_transparent(roll_button)
 	if status_label:
 		if current_player == 0:
 			status_label.text = "دورك. ارم النرد، ثم اختر قطعة مضيئة إذا وجدت أكثر من حركة."
@@ -1125,16 +1127,20 @@ func _update_turn_ui() -> void:
 
 
 func _dice_button_position_for_player(player: int) -> Vector2:
+	return _dice_viewport_position_for_player(player) + Vector2(-4, -4)
+
+
+func _dice_viewport_position_for_player(player: int) -> Vector2:
 	match player:
 		0:
-			return Vector2(128, 1010)
+			return Vector2(106, 990)
 		1:
-			return Vector2(128, 158)
+			return Vector2(104, 124)
 		2:
-			return Vector2(500, 158)
+			return Vector2(510, 124)
 		3:
-			return Vector2(500, 1010)
-	return Vector2(128, 1010)
+			return Vector2(510, 990)
+	return Vector2(106, 990)
 
 
 func _start_human_timer(seconds: float) -> void:
@@ -1479,9 +1485,8 @@ func _select_skin(index: int) -> void:
 	ring.material_override = _make_material(skin["accent"], skin["accent"], 0.2, 0.12, 1.8)
 	_rebuild_pips()
 	_rebuild_play_dice_model()
-	_style_dice_button()
-	if roll_button and not rolling:
-		roll_button.text = _dice_face(max(1, roll_result))
+	if roll_button:
+		_make_button_transparent(roll_button)
 
 
 func _rebuild_pips() -> void:
@@ -1610,7 +1615,8 @@ func _roll_dice() -> void:
 	if result_label:
 		result_label.text = "يدور..."
 	if roll_button:
-		roll_button.text = "⋯"
+		roll_button.text = ""
+		_make_button_transparent(roll_button)
 		roll_button.disabled = true
 	_spawn_sparks(42, 0.82)
 
@@ -1640,7 +1646,8 @@ func _update_roll(delta: float) -> void:
 		if result_label:
 			result_label.text = str(roll_result)
 		if roll_button:
-			roll_button.text = _dice_face(roll_result)
+			roll_button.text = ""
+			_make_button_transparent(roll_button)
 		if play_dice_root:
 			play_dice_root.quaternion = result_rotations[roll_result]
 			play_dice_root.position.y = 0.0
@@ -1840,12 +1847,21 @@ func _player_chip(player_name: String, color: Color, position: Vector2) -> Contr
 	var chip := Control.new()
 	chip.position = position
 	chip.size = Vector2(220, 80)
-	var avatar := _label("●", 52, color, HORIZONTAL_ALIGNMENT_CENTER)
-	avatar.position = Vector2(0, 0)
-	avatar.size = Vector2(70, 70)
+	var avatar_bg := _panel(Vector2(54, 54), Vector2(0, 6), _with_alpha(color, 0.92), 28)
+	chip.add_child(avatar_bg)
+	var avatar_icon := "🙂"
+	if player_name.contains("زهور"):
+		avatar_icon = "👄"
+	elif player_name.contains("عليوش"):
+		avatar_icon = "🧔"
+	elif player_name.contains("Biso"):
+		avatar_icon = "👤"
+	var avatar := _label(avatar_icon, 30, Color.WHITE, HORIZONTAL_ALIGNMENT_CENTER)
+	avatar.position = Vector2(0, 6)
+	avatar.size = Vector2(54, 54)
 	chip.add_child(avatar)
 	var name_label := _label(player_name, 18, Color.WHITE, HORIZONTAL_ALIGNMENT_LEFT)
-	name_label.position = Vector2(76, 22)
+	name_label.position = Vector2(62, 20)
 	name_label.size = Vector2(130, 30)
 	chip.add_child(name_label)
 	return chip
@@ -1880,6 +1896,9 @@ func _make_particle_material(color: Color) -> StandardMaterial3D:
 
 
 func _trigger_dice_cinematic(result: int) -> void:
+	if current_screen == "play" and play_dice_root:
+		_trigger_play_dice_cinematic(result)
+		return
 	if not cinematic_root:
 		return
 	for child in cinematic_root.get_children():
@@ -1896,6 +1915,111 @@ func _trigger_dice_cinematic(result: int) -> void:
 			_spawn_eagle_cinematic(skin["accent"])
 		_:
 			_spawn_lion_cinematic(skin["accent"])
+
+
+func _trigger_play_dice_cinematic(result: int) -> void:
+	for child in play_dice_root.get_children():
+		if String(child.name).begins_with("PlayFX"):
+			child.queue_free()
+	if result != 6:
+		_spawn_play_shock_ring(SKINS[selected_skin]["accent"], 1.15)
+		return
+	var skin: Dictionary = SKINS[selected_skin]
+	match String(skin.get("effect", "lion")):
+		"snake":
+			_spawn_play_snake_fx(skin["accent"])
+		"eagle":
+			_spawn_play_eagle_fx(skin["accent"])
+		_:
+			_spawn_play_lion_fx(skin["accent"])
+
+
+func _spawn_play_snake_fx(color: Color) -> void:
+	var group := Node3D.new()
+	group.name = "PlayFX_Snake"
+	play_dice_root.add_child(group)
+	var mat := _make_material(Color("#145a23"), color, 0.25, 0.18, 1.2)
+	for i in range(9):
+		var segment := MeshInstance3D.new()
+		var mesh := SphereMesh.new()
+		mesh.radius = 0.085 - i * 0.003
+		mesh.height = mesh.radius * 1.5
+		mesh.radial_segments = 12
+		mesh.rings = 6
+		segment.mesh = mesh
+		segment.material_override = mat
+		var a := i * 0.62
+		segment.position = Vector3(cos(a) * 0.82, sin(i * 0.7) * 0.18, sin(a) * 0.82)
+		group.add_child(segment)
+	_spawn_play_shock_ring(color, 1.35)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(group, "rotation:y", TAU * 1.5, 1.1)
+	tween.tween_property(group, "scale", Vector3.ONE * 1.35, 0.45).set_trans(Tween.TRANS_BACK)
+	tween.chain().tween_callback(group.queue_free)
+
+
+func _spawn_play_lion_fx(color: Color) -> void:
+	var group := Node3D.new()
+	group.name = "PlayFX_Lion"
+	play_dice_root.add_child(group)
+	var mat := _make_material(Color("#d58b1f"), color, 0.25, 0.18, 1.3)
+	var mane := MeshInstance3D.new()
+	var mesh := TorusMesh.new()
+	mesh.inner_radius = 0.52
+	mesh.outer_radius = 0.78
+	mesh.ring_segments = 40
+	mesh.rings = 10
+	mane.mesh = mesh
+	mane.material_override = mat
+	mane.rotation_degrees.x = 90
+	group.add_child(mane)
+	_spawn_play_shock_ring(color, 1.55)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(group, "scale", Vector3.ONE * 1.45, 0.5).set_trans(Tween.TRANS_BACK)
+	tween.tween_property(group, "rotation:y", TAU * 0.5, 0.85)
+	tween.chain().tween_callback(group.queue_free)
+
+
+func _spawn_play_eagle_fx(color: Color) -> void:
+	var group := Node3D.new()
+	group.name = "PlayFX_Eagle"
+	play_dice_root.add_child(group)
+	var mat := _make_material(Color("#eff6ff"), color, 0.2, 0.18, 1.3)
+	for side in [-1, 1]:
+		var wing := MeshInstance3D.new()
+		var mesh := BoxMesh.new()
+		mesh.size = Vector3(0.85, 0.045, 0.22)
+		wing.mesh = mesh
+		wing.material_override = mat
+		wing.position = Vector3(side * 0.62, 0.22, 0.0)
+		wing.rotation_degrees.z = side * 22
+		group.add_child(wing)
+	_spawn_play_shock_ring(color, 1.35)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(group, "position:y", 0.55, 0.45).set_trans(Tween.TRANS_SINE)
+	tween.tween_property(group, "scale", Vector3.ONE * 1.4, 0.45).set_trans(Tween.TRANS_BACK)
+	tween.chain().tween_callback(group.queue_free)
+
+
+func _spawn_play_shock_ring(color: Color, scale_target: float) -> void:
+	var ring_fx := MeshInstance3D.new()
+	ring_fx.name = "PlayFX_Ring"
+	var mesh := TorusMesh.new()
+	mesh.inner_radius = 0.72
+	mesh.outer_radius = 0.76
+	mesh.ring_segments = 80
+	mesh.rings = 8
+	ring_fx.mesh = mesh
+	ring_fx.material_override = _make_particle_material(color)
+	ring_fx.rotation_degrees.x = 90
+	play_dice_root.add_child(ring_fx)
+	var tween := create_tween()
+	tween.set_parallel(true)
+	tween.tween_property(ring_fx, "scale", Vector3.ONE * scale_target, 0.45).set_trans(Tween.TRANS_CUBIC)
+	tween.chain().tween_callback(ring_fx.queue_free)
 
 
 func _spawn_snake_cinematic(color: Color) -> void:
