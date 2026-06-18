@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Luxury Ludo Dice Preview</title>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="scene"></canvas>
+
+      <main class="hud">
+        <section class="hero">
+          <p class="eyebrow">معاينة نردات لودو فخمة</p>
+          <h1>اضغط على النرد وشاهد مشهد الرمي</h1>
+          <p>
+            نموذج WebGL تفاعلي للنرد فقط، مناسب كمرجع بصري قبل دمجه لاحقًا
+            داخل تطبيق Kotlin.
+          </p>
+        </section>
+
+        <section class="dice-panel" aria-label="اختيار النرد">
+          <div class="panel-title">
+            <span>سوق النرد</span>
+            <strong id="selectedDiceName">Royal Gold</strong>
+          </div>
+          <div id="skinCards" class="skin-cards"></div>
+        </section>
+
+        <section class="action-card">
+          <div>
+            <span class="label">النتيجة</span>
+            <strong id="resultValue">جاهز</strong>
+          </div>
+          <button id="rollButton" type="button">ارم النرد</button>
+        </section>
+
+        <section class="detail-card">
+          <span id="diceRarity">Legendary</span>
+          <p id="diceDescription">
+            نرد ذهبي ملكي بحواف دائرية، نقاط مضيئة، ولمعة سينمائية عند التوقف.
+          </p>
+        </section>
+      </main>
+
+      <div class="tap-hint">يمكنك الضغط مباشرة على النرد</div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
