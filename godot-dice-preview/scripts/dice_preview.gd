@@ -138,7 +138,6 @@ var dice_name_label: Label
 var dice_description_label: Label
 var market_cards: Array[Button] = []
 var play_skin_buttons: Array[Button] = []
-var roll_button: Button
 var bet_label: Label
 var status_label: Label
 var turn_label: Label
@@ -199,16 +198,6 @@ func _process(delta: float) -> void:
 
 	_update_sparks(delta)
 	_update_turn_timer()
-	if roll_button:
-		roll_button.pivot_offset = roll_button.size / 2.0
-		if rolling and current_screen == "play":
-			roll_button.rotation += delta * 10.0
-			roll_button.scale = Vector2.ONE * (1.0 + abs(sin(time * 16.0)) * 0.08)
-		else:
-			roll_button.rotation = lerp_angle(roll_button.rotation, 0.0, min(1.0, delta * 8.0))
-			if not awaiting_piece_choice:
-				roll_button.scale = roll_button.scale.lerp(Vector2.ONE, min(1.0, delta * 8.0))
-
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("roll_dice"):
@@ -535,11 +524,6 @@ func _build_play_screen() -> Control:
 
 	if not DICE_SYSTEM_DISABLED:
 		_build_play_dice_viewport(screen)
-		roll_button = _button("", Vector2(116, 116), Color.TRANSPARENT, Color.TRANSPARENT)
-		roll_button.position = Vector2(106, 998)
-		_make_button_transparent(roll_button)
-		roll_button.pressed.connect(_roll_dice)
-		screen.add_child(roll_button)
 	else:
 		var dice_removed := _label("تم حذف نظام النرد التجريبي لإعادة بنائه من مصدر احترافي", 16, Color("#ffdca8"), HORIZONTAL_ALIGNMENT_CENTER)
 		dice_removed.position = Vector2(74, 1024)
@@ -664,7 +648,8 @@ func _build_play_dice_viewport(screen: Control) -> void:
 	play_dice_container.position = _dice_viewport_position_for_player(current_player)
 	play_dice_container.size = Vector2(108, 108)
 	play_dice_container.stretch = true
-	play_dice_container.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	play_dice_container.mouse_filter = Control.MOUSE_FILTER_STOP
+	play_dice_container.gui_input.connect(_on_play_dice_gui_input)
 	screen.add_child(play_dice_container)
 
 	play_dice_viewport = SubViewport.new()
@@ -726,6 +711,15 @@ func _build_play_dice_viewport(screen: Control) -> void:
 	play_dice_root.name = "GameplayDiceModel"
 	play_dice_body.add_child(play_dice_root)
 	_rebuild_play_dice_model()
+
+
+func _on_play_dice_gui_input(event: InputEvent) -> void:
+	if current_screen != "play" or current_player != 0:
+		return
+	if event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
+		_roll_dice()
+	elif event is InputEventScreenTouch and event.pressed:
+		_roll_dice()
 
 
 func _build_timer_dots(parent: Control) -> void:
@@ -1260,16 +1254,11 @@ func _update_turn_ui() -> void:
 				tween.tween_property(player_turn_rings[i], "scale", Vector2.ONE, 0.28).set_trans(Tween.TRANS_SINE)
 	if play_dice_container:
 		play_dice_container.position = _dice_viewport_position_for_player(current_player)
-	if roll_button:
-		roll_button.position = _dice_button_position_for_player(current_player)
-		_make_button_transparent(roll_button)
 	if status_label:
 		if current_player == 0:
 			status_label.text = "دورك. ارم النرد، ثم اختر قطعة مضيئة إذا وجدت أكثر من حركة."
 		else:
 			status_label.text = PLAYER_NAMES[current_player] + " يفكر ويرمي النرد..."
-	if roll_button:
-		roll_button.disabled = current_player != 0 or rolling or game_busy or game_over
 
 
 func _dice_button_position_for_player(player: int) -> Vector2:
@@ -1357,8 +1346,6 @@ func _handle_roll_result() -> void:
 	if current_screen != "play":
 		if result_label:
 			result_label.text = str(roll_result)
-		if roll_button:
-			roll_button.disabled = false
 		game_busy = false
 		return
 
@@ -1451,8 +1438,6 @@ func _move_piece(player: int, piece: int, die: int) -> void:
 	game_busy = true
 	awaiting_piece_choice = false
 	_clear_piece_highlights()
-	if roll_button:
-		roll_button.disabled = true
 
 	if status_label:
 		status_label.text = PLAYER_NAMES[player] + " يحرك قطعة " + str(die) + " خطوات..."
@@ -1475,8 +1460,6 @@ func _move_piece(player: int, piece: int, die: int) -> void:
 			status_label.text = PLAYER_NAMES[player] + " فاز! كل القطع وصلت للنهاية."
 		if turn_label:
 			turn_label.text = "انتهت اللعبة"
-		if roll_button:
-			roll_button.disabled = true
 		game_busy = false
 		return
 
@@ -1659,9 +1642,6 @@ func _select_skin(index: int) -> void:
 	ring.material_override = _make_material(skin["accent"], skin["accent"], 0.2, 0.12, 1.8)
 	_rebuild_pips()
 	_rebuild_play_dice_model()
-	if roll_button:
-		_make_button_transparent(roll_button)
-
 
 func _rebuild_pips() -> void:
 	for child in pip_root.get_children():
@@ -1779,8 +1759,6 @@ func _roll_dice() -> void:
 	if current_screen == "play":
 		if game_busy or awaiting_piece_choice or game_over:
 			return
-		if current_player == 0 and roll_button and roll_button.disabled:
-			return
 		game_busy = true
 		_stop_turn_timer()
 	rolling = true
@@ -1793,10 +1771,6 @@ func _roll_dice() -> void:
 	_start_play_dice_physics_roll()
 	if result_label:
 		result_label.text = "يدور..."
-	if roll_button:
-		roll_button.text = ""
-		_make_button_transparent(roll_button)
-		roll_button.disabled = true
 	_spawn_sparks(42, 0.82)
 
 
@@ -1865,17 +1839,12 @@ func _update_roll(delta: float) -> void:
 		dice_root.position.y = base_y
 		if result_label:
 			result_label.text = str(roll_result)
-		if roll_button:
-			roll_button.text = ""
-			_make_button_transparent(roll_button)
 		if play_dice_body:
 			play_dice_body.freeze = true
 			play_dice_body.linear_velocity = Vector3.ZERO
 			play_dice_body.angular_velocity = Vector3.ZERO
 			play_dice_body.quaternion = result_rotations[roll_result]
 			play_dice_body.position = Vector3.ZERO
-		if roll_button and current_screen != "play":
-			roll_button.disabled = false
 		_spawn_sparks(54, 1.2 if roll_result == 6 else 0.74)
 		_trigger_dice_cinematic(roll_result)
 		_handle_roll_result()
@@ -1976,45 +1945,6 @@ func _button(text: String, size: Vector2, color: Color, font_color: Color) -> Bu
 	button.add_theme_stylebox_override("hover", style)
 	button.add_theme_stylebox_override("pressed", style)
 	return button
-
-
-func _style_dice_button() -> void:
-	if not roll_button:
-		return
-	var skin: Dictionary = SKINS[selected_skin]
-	var normal := StyleBoxFlat.new()
-	normal.bg_color = skin["body"]
-	normal.border_color = skin["accent"]
-	normal.border_width_left = 5
-	normal.border_width_right = 5
-	normal.border_width_top = 5
-	normal.border_width_bottom = 5
-	normal.corner_radius_top_left = 16
-	normal.corner_radius_top_right = 16
-	normal.corner_radius_bottom_left = 16
-	normal.corner_radius_bottom_right = 16
-	normal.shadow_color = _with_alpha(Color.BLACK, 0.42)
-	normal.shadow_size = 8
-	var pressed := normal.duplicate() as StyleBoxFlat
-	pressed.bg_color = skin["edge"]
-	roll_button.add_theme_stylebox_override("normal", normal)
-	roll_button.add_theme_stylebox_override("hover", normal)
-	roll_button.add_theme_stylebox_override("pressed", pressed)
-	roll_button.add_theme_stylebox_override("disabled", normal)
-	roll_button.add_theme_color_override("font_color", _readable_dice_font_color(skin["body"]))
-	roll_button.add_theme_color_override("font_disabled_color", _readable_dice_font_color(skin["body"]))
-
-
-func _make_button_transparent(button: Button) -> void:
-	var style := StyleBoxFlat.new()
-	style.bg_color = Color.TRANSPARENT
-	style.border_color = Color.TRANSPARENT
-	button.add_theme_stylebox_override("normal", style)
-	button.add_theme_stylebox_override("hover", style)
-	button.add_theme_stylebox_override("pressed", style)
-	button.add_theme_stylebox_override("disabled", style)
-	button.add_theme_color_override("font_color", Color.TRANSPARENT)
-	button.add_theme_color_override("font_disabled_color", Color.TRANSPARENT)
 
 
 func _readable_dice_font_color(color: Color) -> Color:
